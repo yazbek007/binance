@@ -1,9 +1,16 @@
+# render.yaml
 services:
   - type: web
-    name: crypto-signals
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn signals:app --host 0.0.0.0 --port $PORT
+    name: crypto-signals-bot
+    runtime: docker
+    plan: free
+    region: frankfurt  # يمكن تغييرها حسب موقعك
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.9
+      - key: PORT
+        value: 10000
+      - key: PYTHONUNBUFFERED
+        value: 1
+    healthCheckPath: /health
+    autoDeploy: true
