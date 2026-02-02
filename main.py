@@ -883,6 +883,9 @@ def dashboard():
             </div>
             """
     
+    # عرض RSI بشكل صحيح
+    rsi_display = current_rsi if isinstance(current_rsi, str) else f"{current_rsi:.1f}"
+    
     return f"""
     <html>
         <head>
@@ -902,8 +905,8 @@ def dashboard():
             <div class="metric">
                 <h3>📈 Market Overview</h3>
                 <p><strong>Symbol:</strong> {SYMBOL}</p>
-                <p><strong>Current Price:</strong> {current_price}</p>
-                <p><strong>Current RSI:</strong> {current_rsi:.1f if isinstance(current_rsi, float) else current_rsi}</p>
+                <p><strong>Current Price:</strong> {current_price if isinstance(current_price, str) else f"{current_price:.2f}"}</p>
+                <p><strong>Current RSI:</strong> {rsi_display}</p>
                 <p><strong>Signal Strengths:</strong> {current_strength}</p>
             </div>
             
