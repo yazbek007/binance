@@ -1,12 +1,14 @@
+# app.py
+
 import os
 import time
 import threading
+import asyncio
 from datetime import datetime
 import requests
-from binance.client import Client
-from binance import ThreadedWebsocketManager
+from binance import AsyncClient, BinanceSocketManager
+from binance.enums import BinanceInterval
 import pandas as pd
-import numpy as np
 from flask import Flask
 
 # ────────────────────────────────────────────────
@@ -15,11 +17,11 @@ from flask import Flask
 
 API_KEY    = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
-NTFY_URL   = os.getenv("NTFY_TOPIC", "https://ntfy.sh/test-crypto-bot")
+NTFY_URL   = os.getenv("NTFY_TOPIC", "https://ntfy.sh/your-secret-topic-name")
 
 SYMBOL     = os.getenv("SYMBOL", "BTCUSDT")
-INTERVAL   = os.getenv("INTERVAL", "4h")          # 4h = H4
-CONFIRM_TF = "30m"                                 # M30
+INTERVAL   = BinanceInterval.KLINE_INTERVAL_4HOUR      # H4
+CONFIRM_TF = BinanceInterval.KLINE_INTERVAL_30MINUTE   # M30
 
 # Strategy params
 EMA200_PERIOD = 200
@@ -31,9 +33,8 @@ RSI_MAX       = 65
 
 # Global state
 in_position = False
-last_h4_close_time = None
-klines_h4 = []     # list of dicts
-klines_m30 = []    # for volume confirmation
+klines_h4  = []   # list of dicts
+klines_m30 = []   # for volume confirmation
 
 # ────────────────────────────────────────────────
 #                  Notifications
@@ -88,12 +89,11 @@ def check_long_entry():
         send_ntfy("Already in position → skipping check", "Status")
         return False
 
-    if len(klines_h4) < 210:  # enough data for indicators
+    if len(klines_h4) < 210:
         return False
 
     df_h4 = pd.DataFrame(klines_h4)
-    df_h4['close']  = df_h4['close'].astype(float)
-    df_h4['volume'] = df_h4['volume'].astype(float)
+    df_h4[['close','open','high','low','volume']] = df_h4[['close','open','high','low','volume']].astype(float)
     df_h4 = compute_indicators(df_h4)
 
     last = df_h4.iloc[-1]
@@ -103,25 +103,25 @@ def check_long_entry():
     if last['close'] <= last['ema200']:
         return False
 
-    # 2. Pullback + return near ema50 (simple heuristic)
+    # 2. Pullback + return near ema50 (heuristic)
     recent_low = df_h4['low'].iloc[-8:].min()
-    if recent_low > last['ema50'] * 1.005:  # no real pullback
+    if recent_low > last['ema50'] * 1.005:   # no real pullback
         return False
     if last['close'] < last['ema50'] * 0.992:  # too far below
         return False
 
-    # 3. MACD bullish
+    # 3. MACD bullish crossover
     macd_cross_up = (prev['macd'] < prev['signal']) and (last['macd'] >= last['signal'])
     if not macd_cross_up:
         return False
-    if last['macd'] < -0.0005 * last['close']:  # tolerance ~0.05%
+    if last['macd'] < -0.0005 * last['close']:  # small tolerance
         return False
 
     # 4. RSI filter
     if not (RSI_MIN <= last['rsi'] <= RSI_MAX):
         return False
 
-    # 5. Volume confirmation on M30
+    # 5. Volume confirmation (M30)
     if len(klines_m30) < 25:
         return False
 
@@ -130,96 +130,89 @@ def check_long_entry():
     df_m30['vol_sma'] = df_m30['volume'].rolling(20).mean()
 
     recent_vol = df_m30['volume'].iloc[-1]
-    vol_sma = df_m30['vol_sma'].iloc[-1]
-    vol_max5 = df_m30['volume'].iloc[-5:].max()
+    vol_sma    = df_m30['vol_sma'].iloc[-1]
+    vol_max5   = df_m30['volume'].iloc[-5:].max()
 
     volume_ok = (recent_vol > vol_sma) or (recent_vol > vol_max5)
 
     if not volume_ok:
         return False
 
-    # All conditions met → ENTRY
+    # ENTRY SIGNAL
     entry_price = float(klines_m30[-1]['close'])
     msg = (
         f"ENTRY LONG {SYMBOL}\n"
         f"Price: {entry_price:.2f}\n"
-        f"RSI: {last['rsi']:.1f}\n"
-        f"MACD: {last['macd']:.4f}  Hist: {last['hist']:.4f}\n"
+        f"RSI(14): {last['rsi']:.1f}\n"
+        f"MACD: {last['macd']:.5f}  Hist: {last['hist']:.5f}\n"
         f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
     )
-    send_ntfy(msg, "LONG ENTRY")
+    send_ntfy(msg, "LONG ENTRY SIGNAL")
 
     in_position = True
-    # هنا يمكنك إضافة أمر شراء حقيقي عبر client.futures_create_order(...)
-    # حالياً مجرد إشعار – أضف التنفيذ إذا أردت التداول الحقيقي
+    # ← هنا يمكنك إضافة client.futures_create_order للتنفيذ الفعلي
 
     return True
 
 # ────────────────────────────────────────────────
-#             WebSocket Handlers
+#             Async WebSocket Handlers
 # ────────────────────────────────────────────────
 
 def handle_kline_h4(msg):
-    global last_h4_close_time, klines_h4
-
     k = msg['k']
-    close_time = int(k['T'])
-
     if k['x']:  # candle closed
-        if last_h4_close_time != close_time:
-            last_h4_close_time = close_time
-            klines_h4.append(k)
-            if len(klines_h4) > 500:
-                klines_h4.pop(0)
+        klines_h4.append(k)
+        if len(klines_h4) > 500:
+            klines_h4.pop(0)
 
-            send_ntfy(f"H4 candle closed • {k['c']}", "Data")
-            check_long_entry()
+        send_ntfy(f"H4 closed • Close: {float(k['c']):.2f}", "Data Update", priority="low")
+        check_long_entry()
 
 def handle_kline_m30(msg):
-    global klines_m30
-
     k = msg['k']
-    if k['x']:  # closed candle → keep for volume check
+    if k['x']:  # only keep closed candles for volume check
         klines_m30.append(k)
         if len(klines_m30) > 100:
             klines_m30.pop(0)
 
 # ────────────────────────────────────────────────
-#                  Main Logic
+#              Async Main Loop
 # ────────────────────────────────────────────────
 
-def start_websockets():
-    twm = ThreadedWebsocketManager(
-        api_key=API_KEY,
-        api_secret=API_SECRET
-    )
-    twm.start()
+async def run_websockets():
+    client = await AsyncClient.create(API_KEY, API_SECRET)
+    bm = BinanceSocketManager(client)
 
-    twm.start_kline_socket(
-        callback=handle_kline_h4,
-        symbol=SYMBOL,
-        interval=INTERVAL
-    )
+    async with bm.multiplex_socket([
+        f"{SYMBOL.lower()}@kline_{INTERVAL}",
+        f"{SYMBOL.lower()}@kline_{CONFIRM_TF}"
+    ]) as multiplex_stream:
 
-    twm.start_kline_socket(
-        callback=handle_kline_m30,
-        symbol=SYMBOL,
-        interval=CONFIRM_TF
-    )
+        send_ntfy(f"WebSockets connected • {SYMBOL}  • {INTERVAL} + {CONFIRM_TF}", "Connection OK")
 
-    send_ntfy(f"WebSockets started • {SYMBOL} {INTERVAL}+{CONFIRM_TF}", "Bot Started")
+        while True:
+            try:
+                msg = await multiplex_stream.recv()
+                stream_name = msg['stream']
 
-    twm.join()   # keeps running
+                if '_4h' in stream_name or INTERVAL in stream_name:
+                    handle_kline_h4(msg['data'])
+                elif '_30m' in stream_name or CONFIRM_TF in stream_name:
+                    handle_kline_m30(msg['data'])
+
+            except Exception as e:
+                send_ntfy(f"WebSocket error: {str(e)}", "ERROR", priority="high")
+                await asyncio.sleep(8)
 
 # ────────────────────────────────────────────────
-#                   Flask (لـ Render)
+#                   Flask (Render keep-alive)
 # ────────────────────────────────────────────────
 
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return f"Bot is running • {SYMBOL} {INTERVAL} • {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+    return f"Bot running • {SYMBOL} • {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
 
 @app.route('/health')
 def health():
@@ -228,12 +221,23 @@ def health():
 # ────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    send_ntfy("Bot script started (before threads)", "Init")
+    # إشعار بدء التشغيل
+    send_ntfy(
+        f"Bot script STARTED\n"
+        f"Symbol: {SYMBOL}\n"
+        f"Python: {sys.version}\n"
+        f"Render port: {os.environ.get('PORT', 'unknown')}",
+        title="BOT STARTED",
+        priority="high"
+    )
 
-    # ابدأ WebSocket في thread منفصل
-    ws_thread = threading.Thread(target=start_websockets, daemon=True)
+    # تشغيل الـ websockets في thread منفصل
+    def run_async():
+        asyncio.run(run_websockets())
+
+    ws_thread = threading.Thread(target=run_async, daemon=True)
     ws_thread.start()
 
-    # شغّل Flask (Render يحتاجه)
+    # تشغيل Flask
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
