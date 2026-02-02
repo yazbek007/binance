@@ -1146,11 +1146,13 @@ def index():
 def dashboard():
     """Enhanced dashboard with all monitoring data"""
     with state.lock:
+        # استخدم الدوال المساعدة للحصول على البيانات
         market_data = get_market_data()
         indicators = get_current_indicators()
         signals = get_recent_signals(15)
         performance = get_bot_performance()
         
+        # إنشاء config_info هنا
         config_info = {
             "symbol": SYMBOL,
             "interval": INTERVAL,
@@ -1163,7 +1165,7 @@ def dashboard():
             "weights": WEIGHTS
         }
     
-    # إنشاء HTML متقدم مع Bootstrap
+    # إنشاء HTML متقدم مع Bootstrap - نفس الكود من enhanced_dashboard
     return f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -1173,7 +1175,6 @@ def dashboard():
         <title>Crypto Trading Bot - Advanced Dashboard</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <style>
             body {{ background: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }}
             .card {{ border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }}
@@ -1181,22 +1182,16 @@ def dashboard():
             .price-display {{ font-size: 2.5rem; font-weight: 700; }}
             .change-positive {{ color: #28a745; }}
             .change-negative {{ color: #dc3545; }}
-            .signal-strength {{ height: 20px; border-radius: 10px; }}
-            .signal-long {{ background: linear-gradient(90deg, #28a745, #20c997); }}
-            .signal-short {{ background: linear-gradient(90deg, #dc3545, #fd7e14); }}
             .badge-signal {{ font-size: 0.9em; padding: 5px 10px; }}
             .table-hover tbody tr:hover {{ background-color: rgba(0,0,0,0.02); }}
             .indicator-value {{ font-weight: 600; font-size: 1.1em; }}
             .progress {{ height: 25px; border-radius: 12px; }}
-            .status-active {{ color: #28a745; }}
-            .status-warning {{ color: #ffc107; }}
-            .status-inactive {{ color: #6c757d; }}
         </style>
     </head>
     <body>
         <nav class="navbar navbar-dark bg-dark">
             <div class="container-fluid">
-                <a class="navbar-brand" href="#">
+                <a class="navbar-brand" href="/">
                     <i class="fas fa-robot"></i> Crypto Trading Bot
                 </a>
                 <div class="text-white">
@@ -1207,7 +1202,7 @@ def dashboard():
         </nav>
         
         <div class="container-fluid mt-4">
-            <!-- Row 1: Market Overview -->
+            <!-- Market Overview -->
             <div class="row">
                 <div class="col-lg-12">
                     <div class="card">
@@ -1216,76 +1211,36 @@ def dashboard():
                         </div>
                         <div class="card-body">
                             <div class="row">
-                                <div class="col-md-3 text-center">
+                                <div class="col-md-4 text-center">
                                     <div class="price-display {'change-positive' if market_data.get('change_24h', 0) > 0 else 'change-negative'}">
-                                        ${market_data['current_price']:.2f if isinstance(market_data['current_price'], (int, float)) else market_data['current_price']}
+                                        ${float(market_data.get('current_price', 0)):.2f}
                                     </div>
                                     <div class="mt-2">
                                         <span class="badge {'bg-success' if market_data.get('change_24h', 0) > 0 else 'bg-danger'}">
-                                            24h: {market_data.get('change_24h', 0):.2f}%
-                                        </span>
-                                        <span class="badge bg-info">
-                                            High: ${market_data.get('high_24h', 0):.2f if isinstance(market_data.get('high_24h'), (int, float)) else market_data.get('high_24h', 'N/A')}
-                                        </span>
-                                        <span class="badge bg-warning">
-                                            Low: ${market_data.get('low_24h', 0):.2f if isinstance(market_data.get('low_24h'), (int, float)) else market_data.get('low_24h', 'N/A')}
+                                            24h: {float(market_data.get('change_24h', 0)):.2f}%
                                         </span>
                                     </div>
                                 </div>
-                                
-                                <div class="col-md-9">
+                                <div class="col-md-8">
                                     <div class="row">
-                                        <div class="col-md-4">
+                                        <div class="col-md-6">
                                             <div class="card bg-light">
-                                                <div class="card-body text-center">
-                                                    <h6><i class="fas fa-bolt"></i> Current Strength</h6>
-                                                    <div class="mt-3">
-                                                        <div class="d-flex justify-content-between mb-1">
-                                                            <span>LONG</span>
-                                                            <span>{indicators.get('signal_strengths', {{}}).get('long', 0)}/100</span>
-                                                        </div>
-                                                        <div class="progress">
-                                                            <div class="progress-bar signal-long" style="width: {indicators.get('signal_strengths', {{}}).get('long', 0)}%"></div>
-                                                        </div>
-                                                    </div>
-                                                    <div class="mt-3">
-                                                        <div class="d-flex justify-content-between mb-1">
-                                                            <span>SHORT</span>
-                                                            <span>{indicators.get('signal_strengths', {{}}).get('short', 0)}/100</span>
-                                                        </div>
-                                                        <div class="progress">
-                                                            <div class="progress-bar signal-short" style="width: {indicators.get('signal_strengths', {{}}).get('short', 0)}%"></div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="col-md-4">
-                                            <div class="card bg-light">
-                                                <div class="card-body text-center">
+                                                <div class="card-body">
                                                     <h6><i class="fas fa-chart-bar"></i> Volume</h6>
-                                                    <h4 class="mt-3">{market_data.get('volume_24h', 0):,.0f if isinstance(market_data.get('volume_24h'), (int, float)) else market_data.get('volume_24h', 'N/A')}</h4>
+                                                    <h4>{float(market_data.get('volume_24h', 0)):,.0f}</h4>
                                                     <p class="text-muted">24h Volume</p>
-                                                    <span class="badge {'bg-success' if indicators.get('volume_ratio', 0) > 1 else 'bg-warning'}">
-                                                        Ratio: {indicators.get('volume_ratio', 0):.2f}
-                                                    </span>
                                                 </div>
                                             </div>
                                         </div>
-                                        
-                                        <div class="col-md-4">
+                                        <div class="col-md-6">
                                             <div class="card bg-light">
-                                                <div class="card-body text-center">
+                                                <div class="card-body">
                                                     <h6><i class="fas fa-tachometer-alt"></i> Market Trend</h6>
-                                                    <h4 class="mt-3 {'text-success' if indicators.get('trend') == 'BULLISH' else 'text-danger'}">
+                                                    <h4 class="{'text-success' if indicators.get('trend') == 'BULLISH' else 'text-danger'}">
                                                         {indicators.get('trend', 'N/A')}
                                                     </h4>
-                                                    <div class="mt-3">
-                                                        <span class="badge bg-info">RSI: {indicators.get('rsi', 0):.1f}</span>
-                                                        <span class="badge {'bg-success' if indicators.get('momentum') == 'BULLISH' else 'bg-danger'}">
-                                                            MACD: {'BULL' if indicators.get('momentum') == 'BULLISH' else 'BEAR'}
-                                                        </span>
+                                                    <div class="mt-2">
+                                                        <span class="badge bg-info">RSI: {float(indicators.get('rsi', 0)):.1f}</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1298,77 +1253,34 @@ def dashboard():
                 </div>
             </div>
             
-            <!-- Row 2: Technical Indicators & Performance -->
+            <!-- Technical Indicators -->
             <div class="row">
-                <!-- Technical Indicators -->
                 <div class="col-lg-6">
                     <div class="card">
                         <div class="card-header bg-info text-white">
                             <i class="fas fa-cogs"></i> Technical Indicators
                         </div>
                         <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <table class="table table-sm">
-                                        <tbody>
-                                            <tr>
-                                                <td><i class="fas fa-wave-square"></i> RSI (14)</td>
-                                                <td class="text-end">
-                                                    <span class="indicator-value {'text-danger' if indicators.get('rsi', 50) > 70 else 'text-success' if indicators.get('rsi', 50) < 30 else ''}">
-                                                        {indicators.get('rsi', 0):.2f}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                            <tr>
-                                                <td><i class="fas fa-exchange-alt"></i> MACD</td>
-                                                <td class="text-end">
-                                                    <span class="indicator-value {'text-success' if indicators.get('macd', 0) > indicators.get('macd_signal', 0) else 'text-danger'}">
-                                                        {indicators.get('macd', 0):.6f}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                            <tr>
-                                                <td><i class="fas fa-signal"></i> MACD Signal</td>
-                                                <td class="text-end">{indicators.get('macd_signal', 0):.6f}</td>
-                                            </tr>
-                                            <tr>
-                                                <td><i class="fas fa-chart-area"></i> MACD Histogram</td>
-                                                <td class="text-end">
-                                                    <span class="indicator-value {'text-success' if indicators.get('macd_histogram', 0) > 0 else 'text-danger'}">
-                                                        {indicators.get('macd_histogram', 0):.6f}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <div class="col-md-6">
-                                    <table class="table table-sm">
-                                        <tbody>
-                                            <tr>
-                                                <td><i class="fas fa-chart-line"></i> EMA 20</td>
-                                                <td class="text-end">${indicators.get('ema20', 0):.2f}</td>
-                                            </tr>
-                                            <tr>
-                                                <td><i class="fas fa-chart-line"></i> EMA 50</td>
-                                                <td class="text-end">${indicators.get('ema50', 0):.2f}</td>
-                                            </tr>
-                                            <tr>
-                                                <td><i class="fas fa-chart-line"></i> EMA 200</td>
-                                                <td class="text-end">${indicators.get('ema200', 0):.2f}</td>
-                                            </tr>
-                                            <tr>
-                                                <td><i class="fas fa-exclamation-triangle"></i> ATR %</td>
-                                                <td class="text-end">
-                                                    <span class="indicator-value {'text-danger' if indicators.get('atr_percent', 0) > 3 else 'text-warning'}">
-                                                        {indicators.get('atr_percent', 0):.2f}%
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
+                            <table class="table table-sm">
+                                <tbody>
+                                    <tr>
+                                        <td>RSI (14)</td>
+                                        <td class="text-end">{float(indicators.get('rsi', 0)):.2f}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>EMA 20</td>
+                                        <td class="text-end">${float(indicators.get('ema20', 0)):.2f}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>EMA 50</td>
+                                        <td class="text-end">${float(indicators.get('ema50', 0)):.2f}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>EMA 200</td>
+                                        <td class="text-end">${float(indicators.get('ema200', 0)):.2f}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -1381,30 +1293,13 @@ def dashboard():
                         </div>
                         <div class="card-body">
                             <div class="row">
-                                <div class="col-md-6">
-                                    <div class="text-center mb-4">
-                                        <h6><i class="fas fa-clock"></i> Uptime</h6>
-                                        <h3>{performance.get('uptime', 'N/A')}</h3>
-                                    </div>
-                                    <div class="text-center mb-4">
-                                        <h6><i class="fas fa-bell"></i> Total Signals</h6>
-                                        <h3>{performance.get('total_signals', 0)}</h3>
-                                    </div>
+                                <div class="col-md-6 text-center">
+                                    <h6><i class="fas fa-clock"></i> Uptime</h6>
+                                    <h4>{performance.get('uptime', 'N/A')}</h4>
                                 </div>
-                                <div class="col-md-6">
-                                    <div class="text-center mb-4">
-                                        <h6><i class="fas fa-check-circle"></i> Success Rate</h6>
-                                        <h3 {'class="text-success"' if performance.get('success_rate', 0) > 50 else 'class="text-warning"'}>
-                                            {performance.get('success_rate', 0)}%
-                                        </h3>
-                                    </div>
-                                    <div class="text-center mb-4">
-                                        <h6><i class="fas fa-database"></i> Data Collected</h6>
-                                        <div class="mt-2">
-                                            <span class="badge bg-primary">{performance.get('data_collected', {{}}).get('4h_candles', 0)} 4H</span>
-                                            <span class="badge bg-secondary">{performance.get('data_collected', {{}}).get('30m_candles', 0)} 30M</span>
-                                        </div>
-                                    </div>
+                                <div class="col-md-6 text-center">
+                                    <h6><i class="fas fa-bell"></i> Total Signals</h6>
+                                    <h4>{performance.get('total_signals', 0)}</h4>
                                 </div>
                             </div>
                         </div>
@@ -1412,7 +1307,7 @@ def dashboard():
                 </div>
             </div>
             
-            <!-- Row 3: Recent Signals -->
+            <!-- Recent Signals -->
             <div class="row">
                 <div class="col-lg-12">
                     <div class="card">
@@ -1424,52 +1319,36 @@ def dashboard():
                                 <table class="table table-hover">
                                     <thead>
                                         <tr>
-                                            <th>#</th>
                                             <th>Type</th>
                                             <th>Strength</th>
-                                            <th>Confidence</th>
                                             <th>Price</th>
                                             <th>Time</th>
-                                            <th>Status</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {"".join([
                                             f'''
                                             <tr>
-                                                <td>{sig['id']}</td>
                                                 <td>
-                                                    <span class="badge {'bg-success' if 'LONG' in sig['type'] else 'bg-danger'} badge-signal">
-                                                        {sig['icon']} {sig['type']}
+                                                    <span class="badge {'bg-success' if 'LONG' in sig['type'] else 'bg-danger'}">
+                                                        {sig['type']}
                                                     </span>
                                                 </td>
                                                 <td>
                                                     <div class="progress" style="height: 10px;">
-                                                        <div class="progress-bar bg-{sig['color']}" style="width: {sig['strength']}%"></div>
+                                                        <div class="progress-bar {'bg-success' if sig['strength'] >= SIGNAL_THRESHOLD else 'bg-warning'}" 
+                                                             style="width: {sig['strength']}%"></div>
                                                     </div>
-                                                    <small class="text-muted">{sig['strength']}/100</small>
+                                                    <small>{sig['strength']}/100</small>
                                                 </td>
-                                                <td>
-                                                    <span class="badge bg-{sig['color']}">
-                                                        {sig['confidence']}
-                                                    </span>
-                                                </td>
-                                                <td><strong>${sig['price']:.2f}</strong></td>
-                                                <td>
-                                                    <small>{sig['time']}</small><br>
-                                                    <small class="text-muted">{sig['time_ago']}</small>
-                                                </td>
-                                                <td>
-                                                    <span class="badge {'bg-success' if sig['strength'] >= SIGNAL_THRESHOLD else 'bg-warning'}">
-                                                        {{ 'STRONG' if sig['strength'] >= SIGNAL_THRESHOLD else 'MEDIUM' }}
-                                                    </span>
-                                                </td>
+                                                <td>${float(sig['price']):.2f}</td>
+                                                <td>{sig['time_ago']}</td>
                                             </tr>
                                             ''' for sig in signals.get('recent', [])
                                         ]) if signals.get('recent') else '''
                                         <tr>
-                                            <td colspan="7" class="text-center text-muted">
-                                                <i class="fas fa-info-circle"></i> No signals yet. The bot is collecting data...
+                                            <td colspan="4" class="text-center text-muted">
+                                                No signals yet. The bot is collecting data...
                                             </td>
                                         </tr>
                                         '''}
@@ -1481,130 +1360,26 @@ def dashboard():
                 </div>
             </div>
             
-            <!-- Row 4: Configuration -->
-            <div class="row">
-                <div class="col-lg-12">
-                    <div class="card">
-                        <div class="card-header bg-secondary text-white">
-                            <i class="fas fa-sliders-h"></i> Configuration
-                        </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-4">
-                                    <h6><i class="fas fa-cog"></i> Bot Settings</h6>
-                                    <ul class="list-group list-group-flush">
-                                        <li class="list-group-item d-flex justify-content-between">
-                                            <span>Symbol</span>
-                                            <span class="badge bg-info">{config_info['symbol']}</span>
-                                        </li>
-                                        <li class="list-group-item d-flex justify-content-between">
-                                            <span>Primary TF</span>
-                                            <span class="badge bg-primary">{config_info['interval']}</span>
-                                        </li>
-                                        <li class="list-group-item d-flex justify-content-between">
-                                            <span>Confirmation TF</span>
-                                            <span class="badge bg-secondary">{config_info['confirm_tf']}</span>
-                                        </li>
-                                    </ul>
-                                </div>
-                                
-                                <div class="col-md-4">
-                                    <h6><i class="fas fa-signal"></i> Signal Thresholds</h6>
-                                    <ul class="list-group list-group-flush">
-                                        <li class="list-group-item d-flex justify-content-between">
-                                            <span>MEDIUM (Watch)</span>
-                                            <span class="badge bg-warning">≥{config_info['thresholds']['medium']}/100</span>
-                                        </li>
-                                        <li class="list-group-item d-flex justify-content-between">
-                                            <span>STRONG (Entry)</span>
-                                            <span class="badge bg-success">≥{config_info['thresholds']['strong']}/100</span>
-                                        </li>
-                                        <li class="list-group-item d-flex justify-content-between">
-                                            <span>VERY STRONG</span>
-                                            <span class="badge bg-danger">≥{config_info['thresholds']['high']}/100</span>
-                                        </li>
-                                    </ul>
-                                </div>
-                                
-                                <div class="col-md-4">
-                                    <h6><i class="fas fa-weight-hanging"></i> Signal Weights</h6>
-                                    <ul class="list-group list-group-flush">
-                                        <li class="list-group-item d-flex justify-content-between">
-                                            <span>Trend</span>
-                                            <span class="badge bg-primary">{config_info['weights']['trend']}%</span>
-                                        </li>
-                                        <li class="list-group-item d-flex justify-content-between">
-                                            <span>Momentum</span>
-                                            <span class="badge bg-info">{config_info['weights']['momentum']}%</span>
-                                        </li>
-                                        <li class="list-group-item d-flex justify-content-between">
-                                            <span>Volume</span>
-                                            <span class="badge bg-success">{config_info['weights']['volume']}%</span>
-                                        </li>
-                                        <li class="list-group-item d-flex justify-content-between">
-                                            <span>Structure</span>
-                                            <span class="badge bg-warning">{config_info['weights']['structure']}%</span>
-                                        </li>
-                                        <li class="list-group-item d-flex justify-content-between">
-                                            <span>Multi-TF</span>
-                                            <span class="badge bg-secondary">{config_info['weights']['multi_tf']}%</span>
-                                        </li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
             <!-- Footer -->
             <footer class="mt-4 mb-4 text-center text-muted">
                 <hr>
                 <p>
                     <i class="fas fa-robot"></i> Crypto Trading Bot v2.0 | 
-                    Last Update: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')} |
-                    <a href="/health" class="text-decoration-none">Health Check</a> | 
-                    <a href="/stats" class="text-decoration-none">API Stats</a> | 
-                    <a href="/config" class="text-decoration-none">Config</a>
-                </p>
-                <p class="small">
-                    Status: <span class="status-active"><i class="fas fa-circle"></i> ACTIVE</span> | 
-                    Auto-refresh: <span id="refresh-time">30s</span>
+                    Last Update: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
                 </p>
             </footer>
         </div>
         
         <script>
             // Auto-refresh page every 30 seconds
-            let refreshTime = 30;
-            setInterval(() => {{
-                refreshTime--;
-                document.getElementById('refresh-time').textContent = refreshTime + 's';
-                if (refreshTime <= 0) {{
-                    location.reload();
-                }}
-            }}, 1000);
-            
-            // Update prices every 5 seconds
-            setInterval(() => {{
-                fetch('/api/market')
-                    .then(response => response.json())
-                    .then(data => {{
-                        if (data.price) {{
-                            const priceElement = document.querySelector('.price-display');
-                            if (priceElement) {{
-                                priceElement.textContent = '$' + parseFloat(data.price).toFixed(2);
-                                // Optional: Add animation for price change
-                            }}
-                        }}
-                    }})
-                    .catch(error => console.error('Error fetching market data:', error));
-            }}, 5000);
+            setTimeout(() => {{
+                location.reload();
+            }}, 30000);
         </script>
     </body>
     </html>
     """
-
+    
 # API endpoints
 @app.route('/api/market')
 def api_market():
