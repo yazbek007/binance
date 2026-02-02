@@ -76,28 +76,57 @@ state = TradingState()
 # ────────────────────────────────────────────────
 #                  Notifications
 # ────────────────────────────────────────────────
-
 def send_ntfy(msg: str, title: str = "Crypto Bot", priority: str = "default", 
               tags: str = None) -> None:
     """Send notification via NTFY"""
     try:
+        # تأكد أن الرسالة والعنوان نص عادي
+        if isinstance(msg, str):
+            msg = msg.encode('utf-8').decode('utf-8')
+        if isinstance(title, str):
+            title = title.encode('utf-8').decode('utf-8')
+        
         headers = {
             "Title": title, 
-            "Priority": priority
+            "Priority": priority,
+            "Content-Type": "text/plain; charset=utf-8"  # ⬅️ أضف هذا
         }
         if tags:
             headers["Tags"] = tags
             
-        requests.post(
+        response = requests.post(
             NTFY_URL,
             data=msg.encode('utf-8'),
             headers=headers,
-            timeout=5
+            timeout=10
         )
-        print(f"📤 Notification sent: {title}")
+        
+        if response.status_code == 200:
+            print(f"📤 Notification sent: {title}")
+        else:
+            print(f"⚠️ NTFY returned status code: {response.status_code}")
+            
+    except requests.exceptions.RequestException as e:
+        print(f"❌ NTFY request failed: {e}")
+    except UnicodeEncodeError as e:
+        # إذا فشل ترميز الإيموجي، أزلهم
+        msg_clean = msg.encode('ascii', 'ignore').decode('ascii')
+        title_clean = title.encode('ascii', 'ignore').decode('ascii')
+        print(f"⚠️ Removed emojis and retrying...")
+        
+        # أعد المحاولة بدون إيموجي
+        try:
+            requests.post(
+                NTFY_URL,
+                data=msg_clean.encode('utf-8'),
+                headers={"Title": title_clean, "Priority": priority},
+                timeout=5
+            )
+            print(f"📤 Notification sent (without emojis): {title_clean}")
+        except Exception as e2:
+            print(f"❌ NTFY failed even without emojis: {e2}")
     except Exception as e:
-        print(f"❌ ntfy failed: {e}")
-
+        print(f"❌ Unexpected error in send_ntfy: {e}")
 # ────────────────────────────────────────────────
 #               Technical Indicators
 # ────────────────────────────────────────────────
