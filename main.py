@@ -1,4 +1,5 @@
-# app.py - مع إشعارات المستوى المتوسط
+# app.py - 3-Level Signal Strength Trading Bot
+# الإصدار النهائي المعدل بدون إيموجي في NTFY
 
 import os
 import threading
@@ -12,6 +13,7 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional
 import json
 from dataclasses import dataclass
+import re
 
 # ────────────────────────────────────────────────
 #                 CONFIGURATION
@@ -26,10 +28,10 @@ INTERVAL   = os.getenv("INTERVAL", "4h")
 CONFIRM_TF = os.getenv("CONFIRM_TF", "30m")
 
 # Signal Strength Thresholds - 3 مستويات
-MIN_STRENGTH      = int(os.getenv("MIN_STRENGTH", "50"))       # الحد الأدنى للنظر
-MEDIUM_THRESHOLD  = int(os.getenv("MEDIUM_THRESHOLD", "60"))   # المستوى المتوسط (يشير للمراقبة)
-SIGNAL_THRESHOLD  = int(os.getenv("SIGNAL_THRESHOLD", "70"))   # المستوى القوي (للتنفيذ)
-HIGH_STRENGTH     = int(os.getenv("HIGH_STRENGTH", "85"))      # المستوى القوي جداً (أولوية عالية)
+MIN_STRENGTH      = int(os.getenv("MIN_STRENGTH", "50"))
+MEDIUM_THRESHOLD  = int(os.getenv("MEDIUM_THRESHOLD", "60"))
+SIGNAL_THRESHOLD  = int(os.getenv("SIGNAL_THRESHOLD", "70"))
+HIGH_STRENGTH     = int(os.getenv("HIGH_STRENGTH", "85"))
 
 # Strategy params
 EMA200_PERIOD = 200
@@ -45,11 +47,11 @@ RSI_NEUTRAL    = 50
 
 # Weights for signal strength calculation (sum = 100)
 WEIGHTS = {
-    'trend': 25,           # Overall trend strength
-    'momentum': 25,        # RSI, MACD momentum
-    'volume': 15,          # Volume confirmation
-    'structure': 20,       # Price structure, support/resistance
-    'multi_tf': 15         # Multi-timeframe confirmation
+    'trend': 25,
+    'momentum': 25,
+    'volume': 15,
+    'structure': 20,
+    'multi_tf': 15
 }
 
 # Global state with thread safety
@@ -67,7 +69,7 @@ class TradingState:
         self.signals_history = []
         self.lock = threading.Lock()
         self.last_signal_time = None
-        self.signal_cooldown = 1800  # 30 minutes cooldown
+        self.signal_cooldown = 1800
         self.avg_signal_strength = 0
         self.success_rate = 0
         
@@ -76,57 +78,91 @@ state = TradingState()
 # ────────────────────────────────────────────────
 #                  Notifications
 # ────────────────────────────────────────────────
+
 def send_ntfy(msg: str, title: str = "Crypto Bot", priority: str = "default", 
               tags: str = None) -> None:
-    """Send notification via NTFY"""
+    """Send notification via NTFY - Safe version without emojis"""
     try:
-        # تأكد أن الرسالة والعنوان نص عادي
-        if isinstance(msg, str):
-            msg = msg.encode('utf-8').decode('utf-8')
-        if isinstance(title, str):
-            title = title.encode('utf-8').decode('utf-8')
-        
-        headers = {
-            "Title": title, 
-            "Priority": priority,
-            "Content-Type": "text/plain; charset=utf-8"  # ⬅️ أضف هذا
-        }
-        if tags:
-            headers["Tags"] = tags
+        # دالة مساعدة لتنظيف النص
+        def clean_text(text):
+            if not isinstance(text, str):
+                text = str(text)
             
+            # قائمة بجميع الإيموجي الممكنة
+            emoji_pattern = re.compile(
+                "["
+                "\U0001F600-\U0001F64F"  # emoticons
+                "\U0001F300-\U0001F5FF"  # symbols & pictographs
+                "\U0001F680-\U0001F6FF"  # transport & map symbols
+                "\U0001F1E0-\U0001F1FF"  # flags
+                "\U00002500-\U00002BEF"  # Chinese characters
+                "\U00002702-\U000027B0"
+                "\U000024C2-\U0001F251"
+                "\U0001f926-\U0001f937"
+                "\U00010000-\U0010ffff"
+                "\u2640-\u2642"
+                "\u2600-\u2B55"
+                "\u200d"
+                "\u23cf"
+                "\u23e9"
+                "\u231a"
+                "\ufe0f"  # dingbats
+                "\u3030"
+                "]+",
+                flags=re.UNICODE
+            )
+            
+            # إزالة الإيموجي
+            text = emoji_pattern.sub(r'', text)
+            
+            # إزالة المسافات البادئة والزائدة
+            text = text.strip()
+            
+            # استبدال الأسطر الجديدة بمسافات في العنوان
+            if text == title:
+                text = text.replace('\n', ' | ')
+            
+            return text
+        
+        # تنظيف المدخلات
+        safe_title = clean_text(title)
+        safe_msg = clean_text(msg)
+        
+        # تأكد من أن القيم ليست فارغة
+        if not safe_title or safe_title.isspace():
+            safe_title = "Crypto Bot Notification"
+        
+        if not safe_msg or safe_msg.isspace():
+            safe_msg = "Empty message"
+        
+        # إعداد الهيدرات
+        headers = {
+            "Title": safe_title[:250],
+            "Priority": priority,
+        }
+        
+        # تنظيف وتقصير الـ tags إذا وجدت
+        if tags:
+            safe_tags = clean_text(tags)
+            if safe_tags:
+                headers["Tags"] = safe_tags[:255]
+        
+        # إرسال الإشعار
         response = requests.post(
             NTFY_URL,
-            data=msg.encode('utf-8'),
+            data=safe_msg.encode('utf-8'),
             headers=headers,
             timeout=10
         )
         
         if response.status_code == 200:
-            print(f"📤 Notification sent: {title}")
+            print(f"✓ NTFY sent successfully: {safe_title}")
         else:
-            print(f"⚠️ NTFY returned status code: {response.status_code}")
+            print(f"✗ NTFY failed with status {response.status_code}")
             
-    except requests.exceptions.RequestException as e:
-        print(f"❌ NTFY request failed: {e}")
-    except UnicodeEncodeError as e:
-        # إذا فشل ترميز الإيموجي، أزلهم
-        msg_clean = msg.encode('ascii', 'ignore').decode('ascii')
-        title_clean = title.encode('ascii', 'ignore').decode('ascii')
-        print(f"⚠️ Removed emojis and retrying...")
-        
-        # أعد المحاولة بدون إيموجي
-        try:
-            requests.post(
-                NTFY_URL,
-                data=msg_clean.encode('utf-8'),
-                headers={"Title": title_clean, "Priority": priority},
-                timeout=5
-            )
-            print(f"📤 Notification sent (without emojis): {title_clean}")
-        except Exception as e2:
-            print(f"❌ NTFY failed even without emojis: {e2}")
     except Exception as e:
-        print(f"❌ Unexpected error in send_ntfy: {e}")
+        print(f"✗ NTFY error: {str(e)[:100]}")
+
 # ────────────────────────────────────────────────
 #               Technical Indicators
 # ────────────────────────────────────────────────
@@ -230,7 +266,6 @@ def calculate_trend_strength(df: pd.DataFrame) -> Tuple[int, List[str]]:
         ema_alignment += 8
         reasons.append("EMA20 < EMA50 < EMA200 (Strong Downtrend)")
     
-    # Additional points for distance between EMAs
     ema_distance_20_50 = abs(last['ema20'] - last['ema50']) / last['ema50'] * 100
     if ema_distance_20_50 > 2:
         ema_alignment += 2
@@ -241,15 +276,12 @@ def calculate_trend_strength(df: pd.DataFrame) -> Tuple[int, List[str]]:
     # 2. Price vs EMA position (max 10 points)
     price_position = 0
     if last['close'] > last['ema200']:
-        # Bullish: price above EMA200
         distance = (last['close'] - last['ema200']) / last['ema200'] * 100
-        price_position += min(int(distance * 2), 5)  # Up to 5 points
+        price_position += min(int(distance * 2), 5)
     else:
-        # Bearish: price below EMA200
         distance = (last['ema200'] - last['close']) / last['ema200'] * 100
         price_position += min(int(distance * 2), 5)
     
-    # Price vs EMA50
     if (last['close'] > last['ema50'] and last['ema50'] > last['ema200']) or \
        (last['close'] < last['ema50'] and last['ema50'] < last['ema200']):
         price_position += 5
@@ -260,14 +292,13 @@ def calculate_trend_strength(df: pd.DataFrame) -> Tuple[int, List[str]]:
     # 3. Trend consistency (max 5 points)
     trend_consistency = 0
     recent_trend = df['ema20_above_50'].iloc[-5:].mean()
-    if recent_trend > 0.8:  # 80% of recent candles in trend
+    if recent_trend > 0.8:
         trend_consistency += 3
         reasons.append("Consistent uptrend (80%+)")
-    elif recent_trend < 0.2:  # 80% of recent candles in downtrend
+    elif recent_trend < 0.2:
         trend_consistency += 3
         reasons.append("Consistent downtrend (80%+)")
     
-    # Recent price movement in trend direction
     recent_returns = df['returns'].iloc[-3:].sum() * 100
     if (recent_returns > 1 and last['close'] > last['ema200']) or \
        (recent_returns < -1 and last['close'] < last['ema200']):
@@ -289,24 +320,22 @@ def calculate_momentum_strength(df: pd.DataFrame, signal_type: str) -> Tuple[int
     # 1. RSI Strength (max 10 points)
     rsi_score = 0
     if signal_type == "LONG":
-        if 40 <= last['rsi'] <= 60:  # Optimal for long entries
+        if 40 <= last['rsi'] <= 60:
             rsi_score += 8
             reasons.append(f"RSI in optimal zone: {last['rsi']:.1f}")
         elif last['rsi'] > 30 and last['rsi'] < 70:
             rsi_score += 5
             reasons.append(f"RSI in good zone: {last['rsi']:.1f}")
         
-        # RSI trending up
         if last['rsi'] > prev['rsi']:
             rsi_score += 2
-    else:  # SHORT
-        if 40 <= last['rsi'] <= 60:  # Optimal for short entries
+    else:
+        if 40 <= last['rsi'] <= 60:
             rsi_score += 8
             reasons.append(f"RSI in optimal zone: {last['rsi']:.1f}")
         elif last['rsi'] > 30 and last['rsi'] < 70:
             rsi_score += 5
         
-        # RSI trending down
         if last['rsi'] < prev['rsi']:
             rsi_score += 2
     
@@ -315,7 +344,6 @@ def calculate_momentum_strength(df: pd.DataFrame, signal_type: str) -> Tuple[int
     # 2. MACD Strength (max 10 points)
     macd_score = 0
     
-    # MACD crossover
     if signal_type == "LONG":
         if prev['macd'] < prev['signal'] and last['macd'] > last['signal']:
             macd_score += 8
@@ -323,7 +351,7 @@ def calculate_momentum_strength(df: pd.DataFrame, signal_type: str) -> Tuple[int
         elif last['macd'] > last['signal']:
             macd_score += 5
             reasons.append("MACD above signal line")
-    else:  # SHORT
+    else:
         if prev['macd'] > prev['signal'] and last['macd'] < last['signal']:
             macd_score += 8
             reasons.append("MACD bearish crossover")
@@ -331,7 +359,6 @@ def calculate_momentum_strength(df: pd.DataFrame, signal_type: str) -> Tuple[int
             macd_score += 5
             reasons.append("MACD below signal line")
     
-    # MACD histogram strength
     if abs(last['hist']) > abs(prev['hist']):
         macd_score += 2
         reasons.append("MACD histogram strengthening")
@@ -341,7 +368,6 @@ def calculate_momentum_strength(df: pd.DataFrame, signal_type: str) -> Tuple[int
     # 3. Price momentum (max 5 points)
     momentum_score = 0
     
-    # Recent price action
     recent_candles = df.iloc[-3:]
     bullish_candles = (recent_candles['close'] > recent_candles['open']).sum()
     
@@ -352,7 +378,6 @@ def calculate_momentum_strength(df: pd.DataFrame, signal_type: str) -> Tuple[int
         momentum_score += 3
         reasons.append(f"{3-bullish_candles}/3 recent candles bearish")
     
-    # Price vs moving averages momentum
     if signal_type == "LONG" and last['close'] > last['ema20'] > prev['ema20']:
         momentum_score += 2
     elif signal_type == "SHORT" and last['close'] < last['ema20'] < prev['ema20']:
@@ -376,7 +401,6 @@ def calculate_volume_strength(df_h4: pd.DataFrame, df_m30: pd.DataFrame) -> Tupl
     # 1. Volume vs average (max 8 points)
     volume_score = 0
     
-    # Current volume vs average
     if last_h4['volume_ratio'] > 1.5:
         volume_score += 6
         reasons.append(f"H4 volume {last_h4['volume_ratio']:.1f}x average")
@@ -386,7 +410,6 @@ def calculate_volume_strength(df_h4: pd.DataFrame, df_m30: pd.DataFrame) -> Tupl
     elif last_h4['volume_ratio'] > 1.0:
         volume_score += 2
     
-    # Volume trend
     if last_h4['volume_trend'] == 1:
         volume_score += 2
         reasons.append("Volume above 20-period average")
@@ -396,14 +419,12 @@ def calculate_volume_strength(df_h4: pd.DataFrame, df_m30: pd.DataFrame) -> Tupl
     # 2. 30m confirmation (max 7 points)
     confirm_score = 0
     
-    # 30m volume spike
     if last_m30.get('volume_ratio', 0) > 1.8:
         confirm_score += 5
         reasons.append(f"30m volume spike: {last_m30.get('volume_ratio', 0):.1f}x")
     elif last_m30.get('volume_ratio', 0) > 1.3:
         confirm_score += 3
     
-    # Recent 30m volume trend
     recent_30m_vol = df_m30['volume'].iloc[-3:].mean()
     avg_30m_vol = df_m30['vol_sma20'].iloc[-1]
     if recent_30m_vol > avg_30m_vol * 1.2:
@@ -423,9 +444,8 @@ def calculate_structure_strength(df: pd.DataFrame, signal_type: str) -> Tuple[in
     # 1. Support/Resistance levels (max 10 points)
     structure_score = 0
     
-    # Price near key EMAs
     price_vs_ema50 = abs(last['price_vs_ema50'])
-    if price_vs_ema50 < 1:  # Within 1% of EMA50
+    if price_vs_ema50 < 1:
         structure_score += 8
         reasons.append(f"Price near EMA50 (±{price_vs_ema50:.1f}%)")
     elif price_vs_ema50 < 2:
@@ -433,7 +453,6 @@ def calculate_structure_strength(df: pd.DataFrame, signal_type: str) -> Tuple[in
     elif price_vs_ema50 < 3:
         structure_score += 2
     
-    # Recent price consolidation
     recent_range = df['range'].iloc[-5:].mean()
     avg_range = df['range'].rolling(20).mean().iloc[-1]
     if recent_range < avg_range * 0.7:
@@ -445,8 +464,7 @@ def calculate_structure_strength(df: pd.DataFrame, signal_type: str) -> Tuple[in
     # 2. Candle patterns (max 10 points)
     pattern_score = 0
     
-    # Strong bullish/bearish candles
-    if last['body_ratio'] > 0.7:  # Very strong candle
+    if last['body_ratio'] > 0.7:
         pattern_score += 6
         if last['is_bullish'] == 1:
             reasons.append("Strong bullish candle")
@@ -455,7 +473,6 @@ def calculate_structure_strength(df: pd.DataFrame, signal_type: str) -> Tuple[in
     elif last['body_ratio'] > 0.5:
         pattern_score += 3
     
-    # Consecutive candles in same direction
     recent_direction = df['is_bullish'].iloc[-3:].mean()
     if signal_type == "LONG" and recent_direction > 0.66:
         pattern_score += 4
@@ -483,21 +500,19 @@ def calculate_multi_tf_strength(df_h4: pd.DataFrame, df_m30: pd.DataFrame,
     # 1. 30m trend alignment (max 10 points)
     alignment_score = 0
     
-    # Check if 30m trend confirms 4h trend
     if signal_type == "LONG":
         if last_m30['close'] > last_m30['ema50'] and last_m30['ema50'] > last_m30['ema200']:
             alignment_score += 8
             reasons.append("30m confirms uptrend")
         elif last_m30['close'] > last_m30['ema50']:
             alignment_score += 5
-    else:  # SHORT
+    else:
         if last_m30['close'] < last_m30['ema50'] and last_m30['ema50'] < last_m30['ema200']:
             alignment_score += 8
             reasons.append("30m confirms downtrend")
         elif last_m30['close'] < last_m30['ema50']:
             alignment_score += 5
     
-    # 30m momentum alignment
     if signal_type == "LONG" and last_m30['macd'] > last_m30['signal']:
         alignment_score += 2
     elif signal_type == "SHORT" and last_m30['macd'] < last_m30['signal']:
@@ -505,10 +520,9 @@ def calculate_multi_tf_strength(df_h4: pd.DataFrame, df_m30: pd.DataFrame,
     
     score += min(alignment_score, 10)
     
-    # 2. Divergence check (max 5 points) - bonus for no divergence
+    # 2. Divergence check (max 5 points)
     divergence_score = 0
     
-    # Check for bullish/bearish divergence
     h4_rsi_trend = last_h4['rsi'] > df_h4['rsi'].iloc[-2]
     m30_rsi_trend = last_m30['rsi'] > df_m30['rsi'].iloc[-2]
     
@@ -533,27 +547,22 @@ def calculate_signal_strength(df_h4: pd.DataFrame, df_m30: pd.DataFrame,
         reasons=[]
     )
     
-    # Calculate individual component scores
     trend_score, trend_reasons = calculate_trend_strength(df_h4)
     momentum_score, momentum_reasons = calculate_momentum_strength(df_h4, signal_type)
     volume_score, volume_reasons = calculate_volume_strength(df_h4, df_m30)
     structure_score, structure_reasons = calculate_structure_strength(df_h4, signal_type)
     multi_tf_score, multi_tf_reasons = calculate_multi_tf_strength(df_h4, df_m30, signal_type)
     
-    # Calculate total score
     total_score = (trend_score + momentum_score + volume_score + 
                    structure_score + multi_tf_score)
     
-    # Adjust for volatility (penalize high volatility)
     atr_percent = df_h4['atr_percent'].iloc[-1]
-    if atr_percent > 3:  # High volatility
-        total_score = int(total_score * 0.8)  # 20% penalty
+    if atr_percent > 3:
+        total_score = int(total_score * 0.8)
         metrics.reasons.append(f"High volatility penalty: ATR {atr_percent:.1f}%")
     
-    # Cap at 100
     metrics.strength = min(total_score, 100)
     
-    # Determine confidence level
     if metrics.strength >= HIGH_STRENGTH:
         metrics.confidence = "VERY HIGH"
     elif metrics.strength >= SIGNAL_THRESHOLD:
@@ -565,7 +574,6 @@ def calculate_signal_strength(df_h4: pd.DataFrame, df_m30: pd.DataFrame,
     else:
         metrics.confidence = "VERY LOW"
     
-    # Build breakdown
     metrics.breakdown = {
         'trend': trend_score,
         'momentum': momentum_score,
@@ -575,7 +583,6 @@ def calculate_signal_strength(df_h4: pd.DataFrame, df_m30: pd.DataFrame,
         'total': metrics.strength
     }
     
-    # Combine reasons
     all_reasons = []
     all_reasons.extend(trend_reasons)
     all_reasons.extend(momentum_reasons)
@@ -583,7 +590,6 @@ def calculate_signal_strength(df_h4: pd.DataFrame, df_m30: pd.DataFrame,
     all_reasons.extend(structure_reasons)
     all_reasons.extend(multi_tf_reasons)
     
-    # Add top 5 reasons
     metrics.reasons = all_reasons[:5]
     
     return metrics
@@ -594,81 +600,66 @@ def calculate_signal_strength(df_h4: pd.DataFrame, df_m30: pd.DataFrame,
 
 def send_strong_signal(signal_type: str, price: float, 
                       last_candle: pd.Series, metrics: SignalMetrics) -> None:
-    """Send STRONG trading signal (70+ strength)"""
+    """Send STRONG trading signal (70+ strength) - without emojis"""
     timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
     
     if signal_type == "LONG":
-        title = f"📈 LONG SIGNAL [{metrics.confidence}]"
-        emoji = "🟢"
-        tags = "chart_with_upwards_trend,green_circle"
+        title = f"LONG SIGNAL [{metrics.confidence}]"
+        signal_char = "[LONG]"
     else:
-        title = f"📉 SHORT SIGNAL [{metrics.confidence}]"
-        emoji = "🔴"
-        tags = "chart_with_downwards_trend,red_circle"
-    
-    # Build strength breakdown
-    breakdown_str = "\n".join([f"{k.upper()}: {v}/{(WEIGHTS[k] if k in WEIGHTS else 0)}" 
-                              for k, v in metrics.breakdown.items()])
-    
-    # Top reasons
-    reasons_str = "\n".join([f"• {r}" for r in metrics.reasons[:3]])
+        title = f"SHORT SIGNAL [{metrics.confidence}]"
+        signal_char = "[SHORT]"
     
     msg = (
-        f"{emoji} {signal_type} SIGNAL {SYMBOL}\n"
+        f"{signal_char} SIGNAL {SYMBOL}\n"
         f"Strength: {metrics.strength}/100 ({metrics.confidence})\n"
         f"Price: {price:.2f}\n"
         f"RSI: {last_candle['rsi']:.1f} | MACD: {last_candle['macd']:.5f}\n"
         f"EMA50: {last_candle['ema50']:.2f} | EMA200: {last_candle['ema200']:.2f}\n"
-        f"\n📊 Strength Breakdown:\n{breakdown_str}\n"
-        f"\n🎯 Key Reasons:\n{reasons_str}\n"
-        f"\n⏰ Time: {timestamp}"
+        f"\nStrength Breakdown:\n"
+        f"Trend: {metrics.breakdown['trend']}/{WEIGHTS['trend']}\n"
+        f"Momentum: {metrics.breakdown['momentum']}/{WEIGHTS['momentum']}\n"
+        f"Volume: {metrics.breakdown['volume']}/{WEIGHTS['volume']}\n"
+        f"Structure: {metrics.breakdown['structure']}/{WEIGHTS['structure']}\n"
+        f"Multi-TF: {metrics.breakdown['multi_tf']}/{WEIGHTS['multi_tf']}\n"
+        f"\nTime: {timestamp}"
     )
     
-    # Determine priority based on strength
     priority = "high" if metrics.strength >= HIGH_STRENGTH else "default"
     
-    send_ntfy(msg, title, priority, tags)
+    send_ntfy(msg, title, priority)
     
-    # Console log
     print(f"\n{'='*60}")
-    print(f"✅ {signal_type} STRONG Signal | Strength: {metrics.strength}/100")
+    print(f"{signal_type} STRONG Signal | Strength: {metrics.strength}/100")
     print(f"Price: {price:.2f} | RSI: {last_candle['rsi']:.1f}")
     print(f"{'='*60}\n")
 
 def send_medium_signal(signal_type: str, price: float, 
                       last_candle: pd.Series, metrics: SignalMetrics) -> None:
-    """Send MEDIUM strength signal (60-69) for monitoring"""
+    """Send MEDIUM strength signal (60-69) for monitoring - without emojis"""
     timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
     
     if signal_type == "LONG":
-        title = f"📈 LONG WATCH [{metrics.confidence}]"
-        emoji = "🟡"
-        tags = "chart_with_upwards_trend,yellow_circle"
+        title = f"LONG WATCH [{metrics.confidence}]"
+        signal_char = "[LONG WATCH]"
     else:
-        title = f"📉 SHORT WATCH [{metrics.confidence}]"
-        emoji = "🟠"
-        tags = "chart_with_downwards_trend,orange_circle"
-    
-    # Top reasons only (no breakdown)
-    reasons_str = "\n".join([f"• {r}" for r in metrics.reasons[:2]])
+        title = f"SHORT WATCH [{metrics.confidence}]"
+        signal_char = "[SHORT WATCH]"
     
     msg = (
-        f"{emoji} {signal_type} WATCH {SYMBOL}\n"
+        f"{signal_char} {SYMBOL}\n"
         f"Strength: {metrics.strength}/100 (MEDIUM)\n"
         f"Price: {price:.2f}\n"
         f"RSI: {last_candle['rsi']:.1f} | MACD: {last_candle['macd']:.5f}\n"
-        f"EMA50: {last_candle['ema50']:.2f} | EMA200: {last_candle['ema200']:.2f}\n"
-        f"\n🎯 Key Factors:\n{reasons_str}\n"
-        f"\n⚠️ This is a WATCH signal (not for immediate entry)\n"
+        f"\nThis is a WATCH signal (not for immediate entry)\n"
         f"Monitor for confirmation above {SIGNAL_THRESHOLD}/100\n"
-        f"\n⏰ Time: {timestamp}"
+        f"\nTime: {timestamp}"
     )
     
-    send_ntfy(msg, title, "low", tags)
+    send_ntfy(msg, title, "low")
     
-    # Console log
     print(f"\n{'='*60}")
-    print(f"⚠️ {signal_type} MEDIUM Signal | Strength: {metrics.strength}/100")
+    print(f"{signal_type} MEDIUM Signal | Strength: {metrics.strength}/100")
     print(f"Price: {price:.2f} | RSI: {last_candle['rsi']:.1f}")
     print(f"{'='*60}\n")
 
@@ -679,55 +670,43 @@ def send_medium_signal(signal_type: str, price: float,
 def analyze_market_signals() -> None:
     """Analyze market for both LONG and SHORT signals with strength scoring"""
     with state.lock:
-        # Check if we have enough data
         if len(state.klines_h4) < 210 or len(state.klines_m30) < 50:
             return
         
-        # Apply cooldown between signals
         current_time = datetime.utcnow()
         if (state.last_signal_time and 
             (current_time - state.last_signal_time).seconds < state.signal_cooldown):
             return
         
-        # Prepare dataframes
-        df_h4 = pd.DataFrame(state.klines_h4[-300:])  # Last 300 candles
-        df_m30 = pd.DataFrame(state.klines_m30[-150:])  # Last 150 candles
+        df_h4 = pd.DataFrame(state.klines_h4[-300:])
+        df_m30 = pd.DataFrame(state.klines_m30[-150:])
         
-        # Convert to numeric
         numeric_cols = ['open', 'high', 'low', 'close', 'volume']
         df_h4[numeric_cols] = df_h4[numeric_cols].apply(pd.to_numeric, errors='coerce')
         df_m30[numeric_cols] = df_m30[numeric_cols].apply(pd.to_numeric, errors='coerce')
         
-        # Compute indicators
         df_h4 = compute_indicators(df_h4)
         df_m30 = compute_indicators(df_m30)
         
-        # Get current price
         current_price = float(state.klines_m30[-1]['close'])
         
-        # Analyze both signal types
         signals = []
         
-        # Check LONG signal
         long_metrics = calculate_signal_strength(df_h4, df_m30, "LONG")
         if long_metrics.strength >= MIN_STRENGTH:
             signals.append(("LONG", long_metrics, current_price, df_h4.iloc[-1]))
         
-        # Check SHORT signal
         short_metrics = calculate_signal_strength(df_h4, df_m30, "SHORT")
         if short_metrics.strength >= MIN_STRENGTH:
             signals.append(("SHORT", short_metrics, current_price, df_h4.iloc[-1]))
         
-        # Sort by strength and process
         signals.sort(key=lambda x: x[1].strength, reverse=True)
         
         for signal_type, metrics, price, last_candle in signals:
-            # MEDIUM signals (60-69)
             if MEDIUM_THRESHOLD <= metrics.strength < SIGNAL_THRESHOLD:
                 send_medium_signal(signal_type, price, last_candle, metrics)
                 state.last_signal_time = current_time
                 
-                # Record for tracking
                 state.signals_history.append({
                     'time': current_time,
                     'type': signal_type + "_WATCH",
@@ -736,14 +715,12 @@ def analyze_market_signals() -> None:
                     'confidence': metrics.confidence
                 })
                 
-                break  # Only send strongest medium signal
+                break
             
-            # STRONG signals (70+)
             elif metrics.strength >= SIGNAL_THRESHOLD:
                 send_strong_signal(signal_type, price, last_candle, metrics)
                 state.last_signal_time = current_time
                 
-                # Record signal for tracking
                 state.signals_history.append({
                     'time': current_time,
                     'type': signal_type,
@@ -752,7 +729,7 @@ def analyze_market_signals() -> None:
                     'confidence': metrics.confidence
                 })
                 
-                break  # Only send strongest strong signal
+                break
 
 # ────────────────────────────────────────────────
 #             Async Handlers
@@ -762,7 +739,7 @@ def handle_kline(msg: Dict, timeframe: str) -> None:
     """Handle kline updates for any timeframe"""
     k = msg['k']
     
-    if k['x']:  # Candle closed
+    if k['x']:
         candle_data = {
             'open': float(k['o']),
             'high': float(k['h']),
@@ -782,7 +759,6 @@ def handle_kline(msg: Dict, timeframe: str) -> None:
                 if len(state.klines_m30) > 200:
                     state.klines_m30.pop(0)
         
-        # Analyze for signals if this is a primary timeframe candle close
         if timeframe == INTERVAL:
             analyze_market_signals()
 
@@ -805,26 +781,25 @@ async def run_websockets():
             ]
             
             async with bm.multiplex_socket(streams) as multiplex_stream:
-                # Connection success message
                 connection_msg = (
-                    f"✅ WebSockets Connected - 3-Level Signals\n"
+                    f"WebSockets Connected - 3-Level Signals\n"
                     f"Symbol: {SYMBOL}\n"
                     f"Timeframes: {INTERVAL} + {CONFIRM_TF}\n"
                     f"Signal Levels:\n"
-                    f"• MEDIUM (Watch): {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100\n"
-                    f"• STRONG (Entry): {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100\n"
-                    f"• VERY STRONG: {HIGH_STRENGTH}+/100\n"
+                    f"- MEDIUM (Watch): {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100\n"
+                    f"- STRONG (Entry): {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100\n"
+                    f"- VERY STRONG: {HIGH_STRENGTH}+/100\n"
                     f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
                 )
-                send_ntfy(connection_msg, "🚀 Bot Connected - 3 Levels", "high", "white_check_mark")
+                send_ntfy(connection_msg, "Bot Connected - 3 Levels", "high")
                 
-                print(f"\n✅ Connected to Binance WebSocket")
-                print(f"📊 Monitoring: {SYMBOL}")
-                print(f"⏰ Timeframes: {INTERVAL}, {CONFIRM_TF}")
-                print(f"🎯 Signal Levels:")
-                print(f"   - MEDIUM (Watch): {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100")
-                print(f"   - STRONG (Entry): {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100")
-                print(f"   - VERY STRONG: {HIGH_STRENGTH}+/100")
+                print(f"\nConnected to Binance WebSocket")
+                print(f"Monitoring: {SYMBOL}")
+                print(f"Timeframes: {INTERVAL}, {CONFIRM_TF}")
+                print(f"Signal Levels:")
+                print(f"  - MEDIUM (Watch): {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100")
+                print(f"  - STRONG (Entry): {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100")
+                print(f"  - VERY STRONG: {HIGH_STRENGTH}+/100")
                 print(f"{'='*60}\n")
                 
                 while True:
@@ -839,17 +814,17 @@ async def run_websockets():
                             handle_kline(data, CONFIRM_TF)
                             
                     except Exception as e:
-                        print(f"⚠️ Error processing message: {e}")
+                        print(f"Error processing message: {e}")
                         await asyncio.sleep(1)
                         
         except Exception as e:
-            error_msg = f"WebSocket Error: {str(e)[:100]}..."
-            send_ntfy(error_msg, "⚠️ Connection Lost", "high", "warning")
-            print(f"❌ WebSocket error: {e}")
-            print(f"⏳ Reconnecting in {reconnect_delay} seconds...")
+            error_msg = f"WebSocket Error: {str(e)[:100]}"
+            send_ntfy(error_msg, "Connection Lost", "high")
+            print(f"WebSocket error: {e}")
+            print(f"Reconnecting in {reconnect_delay} seconds...")
             
             await asyncio.sleep(reconnect_delay)
-            reconnect_delay = min(reconnect_delay * 1.5, 60)  # Exponential backoff
+            reconnect_delay = min(reconnect_delay * 1.5, 60)
 
 # ────────────────────────────────────────────────
 #                   Flask App
@@ -868,8 +843,8 @@ def dashboard():
         current_rsi = "N/A"
         current_strength = "N/A"
         
-        if state.klines_h4 and state.klines_m30:
-            try:
+        try:
+            if state.klines_h4 and state.klines_m30:
                 df_h4 = pd.DataFrame(state.klines_h4[-100:])
                 df_m30 = pd.DataFrame(state.klines_m30[-50:])
                 
@@ -883,15 +858,12 @@ def dashboard():
                 current_price = float(state.klines_m30[-1]['close'])
                 current_rsi = last_h4['rsi']
                 
-                # Calculate current signal strengths
                 long_strength = calculate_signal_strength(df_h4, df_m30, "LONG").strength
                 short_strength = calculate_signal_strength(df_h4, df_m30, "SHORT").strength
                 current_strength = f"LONG: {long_strength}/100 | SHORT: {short_strength}/100"
-                
-            except Exception as e:
-                print(f"Dashboard error: {e}")
+        except Exception as e:
+            print(f"Dashboard error: {e}")
         
-        # Recent signals
         recent_signals = state.signals_history[-5:] if state.signals_history else []
         signals_html = ""
         for sig in reversed(recent_signals):
@@ -912,9 +884,6 @@ def dashboard():
             </div>
             """
     
-    # عرض RSI بشكل صحيح
-    rsi_display = current_rsi if isinstance(current_rsi, str) else f"{current_rsi:.1f}"
-    
     return f"""
     <html>
         <head>
@@ -922,25 +891,22 @@ def dashboard():
             <style>
                 body {{ font-family: Arial, sans-serif; margin: 20px; }}
                 .metric {{ background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 5px; }}
-                .strong {{ color: green; font-weight: bold; }}
-                .medium {{ color: orange; font-weight: bold; }}
-                .weak {{ color: gray; }}
                 .signal {{ margin: 5px 0; padding: 5px; border-left: 4px solid; }}
             </style>
         </head>
         <body>
-            <h1>📊 Crypto Trading Bot - 3-Level Signal System</h1>
+            <h1>Crypto Trading Bot - 3-Level Signal System</h1>
             
             <div class="metric">
-                <h3>📈 Market Overview</h3>
+                <h3>Market Overview</h3>
                 <p><strong>Symbol:</strong> {SYMBOL}</p>
                 <p><strong>Current Price:</strong> {current_price if isinstance(current_price, str) else f"{current_price:.2f}"}</p>
-                <p><strong>Current RSI:</strong> {rsi_display}</p>
+                <p><strong>Current RSI:</strong> {current_rsi if isinstance(current_rsi, str) else f"{current_rsi:.1f}"}</p>
                 <p><strong>Signal Strengths:</strong> {current_strength}</p>
             </div>
             
             <div class="metric">
-                <h3>⚙️ Signal Configuration</h3>
+                <h3>Signal Configuration</h3>
                 <p><strong>MEDIUM (Watch):</strong> {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100</p>
                 <p><strong>STRONG (Entry):</strong> {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100</p>
                 <p><strong>VERY STRONG:</strong> {HIGH_STRENGTH}+/100</p>
@@ -948,20 +914,20 @@ def dashboard():
             </div>
             
             <div class="metric">
-                <h3>📊 Data Status</h3>
+                <h3>Data Status</h3>
                 <p><strong>4H Candles:</strong> {h4_count} (Need: 210)</p>
                 <p><strong>30M Candles:</strong> {m30_count} (Need: 50)</p>
                 <p><strong>Signal History:</strong> {len(state.signals_history)} records</p>
             </div>
             
             <div class="metric">
-                <h3>📨 Recent Signals</h3>
+                <h3>Recent Signals</h3>
                 <p><span style="color:green">●</span> STRONG | <span style="color:orange">●</span> MEDIUM</p>
                 {signals_html if signals_html else "<p>No signals yet</p>"}
             </div>
             
             <div class="metric">
-                <h3>🎯 Signal Strength Weights</h3>
+                <h3>Signal Strength Weights</h3>
                 <p>Trend: {WEIGHTS['trend']}% | Momentum: {WEIGHTS['momentum']}% | Volume: {WEIGHTS['volume']}%</p>
                 <p>Structure: {WEIGHTS['structure']}% | Multi-TF: {WEIGHTS['multi_tf']}%</p>
             </div>
@@ -982,7 +948,6 @@ def health():
     """Health check endpoint"""
     with state.lock:
         data_ok = len(state.klines_h4) > 100 and len(state.klines_m30) > 50
-        recent_activity = state.last_signal_time is not None
     
     status = {
         "status": "healthy" if data_ok else "collecting_data",
@@ -1072,29 +1037,25 @@ def config():
 
 if __name__ == "__main__":
     # Startup notification
-    startup_msg = f"""
-🚀 **3-Level Signal Strength Bot STARTED**
-
-**Symbol:** {SYMBOL}
-**Timeframes:** {INTERVAL} + {CONFIRM_TF}
-
-**📊 Signal Levels:**
-• MEDIUM (Watch): {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100
-• STRONG (Entry): {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100  
-• VERY STRONG: {HIGH_STRENGTH}+/100
-
-**⚖️ Weights:**
-• Trend: {WEIGHTS['trend']}%
-• Momentum: {WEIGHTS['momentum']}%
-• Volume: {WEIGHTS['volume']}%
-• Structure: {WEIGHTS['structure']}%
-• Multi-TF: {WEIGHTS['multi_tf']}%
-
-**📈 Status:** Monitoring for 3-level signals...
-**⏰ Time:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
-    """
+    startup_msg = (
+        "3-Level Signal Strength Bot STARTED\n\n"
+        f"Symbol: {SYMBOL}\n"
+        f"Timeframes: {INTERVAL} + {CONFIRM_TF}\n\n"
+        "Signal Levels:\n"
+        f"- MEDIUM (Watch): {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100\n"
+        f"- STRONG (Entry): {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100\n"
+        f"- VERY STRONG: {HIGH_STRENGTH}+/100\n\n"
+        "Weights:\n"
+        f"- Trend: {WEIGHTS['trend']}%\n"
+        f"- Momentum: {WEIGHTS['momentum']}%\n"
+        f"- Volume: {WEIGHTS['volume']}%\n"
+        f"- Structure: {WEIGHTS['structure']}%\n"
+        f"- Multi-TF: {WEIGHTS['multi_tf']}%\n\n"
+        f"Status: Monitoring for signals\n"
+        f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+    )
     
-    send_ntfy(startup_msg, "🤖 3-Level Signal Bot Started", "high", "rocket,chart_increasing")
+    send_ntfy(startup_msg, "3-Level Signal Bot Started", "high")
     
     # Start WebSocket thread
     def run_async():
@@ -1107,19 +1068,19 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     
     print(f"\n{'='*70}")
-    print(f"🤖 3-LEVEL SIGNAL STRENGTH TRADING BOT")
+    print(f"3-LEVEL SIGNAL STRENGTH TRADING BOT")
     print(f"{'='*70}")
-    print(f"📊 Symbol: {SYMBOL}")
-    print(f"⏰ Timeframes: {INTERVAL} (Primary), {CONFIRM_TF} (Confirmation)")
-    print(f"\n🎯 SIGNAL LEVELS:")
-    print(f"   📍 MEDIUM (Watch): {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100")
-    print(f"   ✅ STRONG (Entry): {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100")
-    print(f"   🏆 VERY STRONG: {HIGH_STRENGTH}+/100")
-    print(f"\n⚖️ Weights: Trend({WEIGHTS['trend']}%) | Momentum({WEIGHTS['momentum']}%)")
-    print(f"           Volume({WEIGHTS['volume']}%) | Structure({WEIGHTS['structure']}%)")
-    print(f"           Multi-TF({WEIGHTS['multi_tf']}%)")
-    print(f"\n🌐 Web Dashboard: http://localhost:{port}")
+    print(f"Symbol: {SYMBOL}")
+    print(f"Timeframes: {INTERVAL} (Primary), {CONFIRM_TF} (Confirmation)")
+    print(f"\nSIGNAL LEVELS:")
+    print(f"  - MEDIUM (Watch): {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100")
+    print(f"  - STRONG (Entry): {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100")
+    print(f"  - VERY STRONG: {HIGH_STRENGTH}+/100")
+    print(f"\nWeights: Trend({WEIGHTS['trend']}%) | Momentum({WEIGHTS['momentum']}%)")
+    print(f"         Volume({WEIGHTS['volume']}%) | Structure({WEIGHTS['structure']}%)")
+    print(f"         Multi-TF({WEIGHTS['multi_tf']}%)")
+    print(f"\nWeb Dashboard: http://localhost:{port}")
     print(f"{'='*70}")
-    print(f"⏳ Waiting for data and calculating signal strengths...\n")
+    print(f"Waiting for data and calculating signal strengths...\n")
     
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
