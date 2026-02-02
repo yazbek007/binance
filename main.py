@@ -1,4 +1,4 @@
-# app.py - Enhanced with Signal Strength System
+# app.py - مع إشعارات المستوى المتوسط
 
 import os
 import threading
@@ -25,10 +25,11 @@ SYMBOL     = os.getenv("SYMBOL", "BTCUSDT").upper()
 INTERVAL   = os.getenv("INTERVAL", "4h")
 CONFIRM_TF = os.getenv("CONFIRM_TF", "30m")
 
-# Signal Strength Thresholds
-SIGNAL_THRESHOLD  = int(os.getenv("SIGNAL_THRESHOLD", "70"))  # Default 70/100
-MIN_STRENGTH      = int(os.getenv("MIN_STRENGTH", "50"))      # Minimum to even consider
-HIGH_STRENGTH     = int(os.getenv("HIGH_STRENGTH", "85"))     # High priority threshold
+# Signal Strength Thresholds - 3 مستويات
+MIN_STRENGTH      = int(os.getenv("MIN_STRENGTH", "50"))       # الحد الأدنى للنظر
+MEDIUM_THRESHOLD  = int(os.getenv("MEDIUM_THRESHOLD", "60"))   # المستوى المتوسط (يشير للمراقبة)
+SIGNAL_THRESHOLD  = int(os.getenv("SIGNAL_THRESHOLD", "70"))   # المستوى القوي (للتنفيذ)
+HIGH_STRENGTH     = int(os.getenv("HIGH_STRENGTH", "85"))      # المستوى القوي جداً (أولوية عالية)
 
 # Strategy params
 EMA200_PERIOD = 200
@@ -63,7 +64,6 @@ class TradingState:
     def __init__(self):
         self.klines_h4 = []
         self.klines_m30 = []
-        self.klines_1h = []  # Additional timeframe for confirmation
         self.signals_history = []
         self.lock = threading.Lock()
         self.last_signal_time = None
@@ -529,10 +529,12 @@ def calculate_signal_strength(df_h4: pd.DataFrame, df_m30: pd.DataFrame,
         metrics.confidence = "VERY HIGH"
     elif metrics.strength >= SIGNAL_THRESHOLD:
         metrics.confidence = "HIGH"
-    elif metrics.strength >= MIN_STRENGTH:
+    elif metrics.strength >= MEDIUM_THRESHOLD:
         metrics.confidence = "MEDIUM"
-    else:
+    elif metrics.strength >= MIN_STRENGTH:
         metrics.confidence = "LOW"
+    else:
+        metrics.confidence = "VERY LOW"
     
     # Build breakdown
     metrics.breakdown = {
@@ -556,6 +558,90 @@ def calculate_signal_strength(df_h4: pd.DataFrame, df_m30: pd.DataFrame,
     metrics.reasons = all_reasons[:5]
     
     return metrics
+
+# ────────────────────────────────────────────────
+#              Signal Notifications
+# ────────────────────────────────────────────────
+
+def send_strong_signal(signal_type: str, price: float, 
+                      last_candle: pd.Series, metrics: SignalMetrics) -> None:
+    """Send STRONG trading signal (70+ strength)"""
+    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+    
+    if signal_type == "LONG":
+        title = f"📈 LONG SIGNAL [{metrics.confidence}]"
+        emoji = "🟢"
+        tags = "chart_with_upwards_trend,green_circle"
+    else:
+        title = f"📉 SHORT SIGNAL [{metrics.confidence}]"
+        emoji = "🔴"
+        tags = "chart_with_downwards_trend,red_circle"
+    
+    # Build strength breakdown
+    breakdown_str = "\n".join([f"{k.upper()}: {v}/{(WEIGHTS[k] if k in WEIGHTS else 0)}" 
+                              for k, v in metrics.breakdown.items()])
+    
+    # Top reasons
+    reasons_str = "\n".join([f"• {r}" for r in metrics.reasons[:3]])
+    
+    msg = (
+        f"{emoji} {signal_type} SIGNAL {SYMBOL}\n"
+        f"Strength: {metrics.strength}/100 ({metrics.confidence})\n"
+        f"Price: {price:.2f}\n"
+        f"RSI: {last_candle['rsi']:.1f} | MACD: {last_candle['macd']:.5f}\n"
+        f"EMA50: {last_candle['ema50']:.2f} | EMA200: {last_candle['ema200']:.2f}\n"
+        f"\n📊 Strength Breakdown:\n{breakdown_str}\n"
+        f"\n🎯 Key Reasons:\n{reasons_str}\n"
+        f"\n⏰ Time: {timestamp}"
+    )
+    
+    # Determine priority based on strength
+    priority = "high" if metrics.strength >= HIGH_STRENGTH else "default"
+    
+    send_ntfy(msg, title, priority, tags)
+    
+    # Console log
+    print(f"\n{'='*60}")
+    print(f"✅ {signal_type} STRONG Signal | Strength: {metrics.strength}/100")
+    print(f"Price: {price:.2f} | RSI: {last_candle['rsi']:.1f}")
+    print(f"{'='*60}\n")
+
+def send_medium_signal(signal_type: str, price: float, 
+                      last_candle: pd.Series, metrics: SignalMetrics) -> None:
+    """Send MEDIUM strength signal (60-69) for monitoring"""
+    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+    
+    if signal_type == "LONG":
+        title = f"📈 LONG WATCH [{metrics.confidence}]"
+        emoji = "🟡"
+        tags = "chart_with_upwards_trend,yellow_circle"
+    else:
+        title = f"📉 SHORT WATCH [{metrics.confidence}]"
+        emoji = "🟠"
+        tags = "chart_with_downwards_trend,orange_circle"
+    
+    # Top reasons only (no breakdown)
+    reasons_str = "\n".join([f"• {r}" for r in metrics.reasons[:2]])
+    
+    msg = (
+        f"{emoji} {signal_type} WATCH {SYMBOL}\n"
+        f"Strength: {metrics.strength}/100 (MEDIUM)\n"
+        f"Price: {price:.2f}\n"
+        f"RSI: {last_candle['rsi']:.1f} | MACD: {last_candle['macd']:.5f}\n"
+        f"EMA50: {last_candle['ema50']:.2f} | EMA200: {last_candle['ema200']:.2f}\n"
+        f"\n🎯 Key Factors:\n{reasons_str}\n"
+        f"\n⚠️ This is a WATCH signal (not for immediate entry)\n"
+        f"Monitor for confirmation above {SIGNAL_THRESHOLD}/100\n"
+        f"\n⏰ Time: {timestamp}"
+    )
+    
+    send_ntfy(msg, title, "low", tags)
+    
+    # Console log
+    print(f"\n{'='*60}")
+    print(f"⚠️ {signal_type} MEDIUM Signal | Strength: {metrics.strength}/100")
+    print(f"Price: {price:.2f} | RSI: {last_candle['rsi']:.1f}")
+    print(f"{'='*60}\n")
 
 # ────────────────────────────────────────────────
 #              Signal Analysis
@@ -607,9 +693,25 @@ def analyze_market_signals() -> None:
         signals.sort(key=lambda x: x[1].strength, reverse=True)
         
         for signal_type, metrics, price, last_candle in signals:
-            # Only send if above threshold
-            if metrics.strength >= SIGNAL_THRESHOLD:
-                send_signal_with_strength(signal_type, price, last_candle, metrics)
+            # MEDIUM signals (60-69)
+            if MEDIUM_THRESHOLD <= metrics.strength < SIGNAL_THRESHOLD:
+                send_medium_signal(signal_type, price, last_candle, metrics)
+                state.last_signal_time = current_time
+                
+                # Record for tracking
+                state.signals_history.append({
+                    'time': current_time,
+                    'type': signal_type + "_WATCH",
+                    'strength': metrics.strength,
+                    'price': price,
+                    'confidence': metrics.confidence
+                })
+                
+                break  # Only send strongest medium signal
+            
+            # STRONG signals (70+)
+            elif metrics.strength >= SIGNAL_THRESHOLD:
+                send_strong_signal(signal_type, price, last_candle, metrics)
                 state.last_signal_time = current_time
                 
                 # Record signal for tracking
@@ -621,54 +723,7 @@ def analyze_market_signals() -> None:
                     'confidence': metrics.confidence
                 })
                 
-                # Keep only last 100 signals
-                if len(state.signals_history) > 100:
-                    state.signals_history.pop(0)
-                
-                break  # Only send strongest signal
-
-def send_signal_with_strength(signal_type: str, price: float, 
-                            last_candle: pd.Series, metrics: SignalMetrics) -> None:
-    """Send trading signal with strength details"""
-    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
-    
-    if signal_type == "LONG":
-        title = f"📈 LONG SIGNAL [{metrics.confidence}]"
-        emoji = "🟢"
-        tags = "chart_with_upwards_trend,green_circle"
-    else:
-        title = f"📉 SHORT SIGNAL [{metrics.confidence}]"
-        emoji = "🔴"
-        tags = "chart_with_downwards_trend,red_circle"
-    
-    # Build strength breakdown
-    breakdown_str = "\n".join([f"{k.upper()}: {v}/{(WEIGHTS[k] if k in WEIGHTS else 0)}" 
-                              for k, v in metrics.breakdown.items()])
-    
-    # Top reasons
-    reasons_str = "\n".join([f"• {r}" for r in metrics.reasons[:3]])
-    
-    msg = (
-        f"{emoji} {signal_type} SIGNAL {SYMBOL}\n"
-        f"Strength: {metrics.strength}/100 ({metrics.confidence})\n"
-        f"Price: {price:.2f}\n"
-        f"RSI: {last_candle['rsi']:.1f} | MACD: {last_candle['macd']:.5f}\n"
-        f"EMA50: {last_candle['ema50']:.2f} | EMA200: {last_candle['ema200']:.2f}\n"
-        f"\n📊 Strength Breakdown:\n{breakdown_str}\n"
-        f"\n🎯 Key Reasons:\n{reasons_str}\n"
-        f"\n⏰ Time: {timestamp}"
-    )
-    
-    # Determine priority based on strength
-    priority = "high" if metrics.strength >= HIGH_STRENGTH else "default"
-    
-    send_ntfy(msg, title, priority, tags)
-    
-    # Console log
-    print(f"\n{'='*60}")
-    print(f"{signal_type} Signal | Strength: {metrics.strength}/100 | Confidence: {metrics.confidence}")
-    print(f"Price: {price:.2f} | RSI: {last_candle['rsi']:.1f}")
-    print(f"{'='*60}\n")
+                break  # Only send strongest strong signal
 
 # ────────────────────────────────────────────────
 #             Async Handlers
@@ -723,20 +778,24 @@ async def run_websockets():
             async with bm.multiplex_socket(streams) as multiplex_stream:
                 # Connection success message
                 connection_msg = (
-                    f"✅ WebSockets Connected\n"
+                    f"✅ WebSockets Connected - 3-Level Signals\n"
                     f"Symbol: {SYMBOL}\n"
                     f"Timeframes: {INTERVAL} + {CONFIRM_TF}\n"
-                    f"Signal Threshold: {SIGNAL_THRESHOLD}/100\n"
-                    f"High Strength: {HIGH_STRENGTH}/100\n"
+                    f"Signal Levels:\n"
+                    f"• MEDIUM (Watch): {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100\n"
+                    f"• STRONG (Entry): {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100\n"
+                    f"• VERY STRONG: {HIGH_STRENGTH}+/100\n"
                     f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
                 )
-                send_ntfy(connection_msg, "🚀 Bot Connected", "high", "white_check_mark")
+                send_ntfy(connection_msg, "🚀 Bot Connected - 3 Levels", "high", "white_check_mark")
                 
                 print(f"\n✅ Connected to Binance WebSocket")
                 print(f"📊 Monitoring: {SYMBOL}")
                 print(f"⏰ Timeframes: {INTERVAL}, {CONFIRM_TF}")
-                print(f"🎯 Signal Threshold: {SIGNAL_THRESHOLD}/100")
-                print(f"🏆 High Strength: {HIGH_STRENGTH}/100")
+                print(f"🎯 Signal Levels:")
+                print(f"   - MEDIUM (Watch): {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100")
+                print(f"   - STRONG (Entry): {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100")
+                print(f"   - VERY STRONG: {HIGH_STRENGTH}+/100")
                 print(f"{'='*60}\n")
                 
                 while True:
@@ -807,10 +866,19 @@ def dashboard():
         recent_signals = state.signals_history[-5:] if state.signals_history else []
         signals_html = ""
         for sig in reversed(recent_signals):
-            strength_color = "green" if sig['strength'] >= 70 else "orange" if sig['strength'] >= 50 else "gray"
+            if sig['strength'] >= SIGNAL_THRESHOLD:
+                strength_color = "green"
+                signal_type = f"<strong>{sig['type']}</strong>"
+            elif sig['strength'] >= MEDIUM_THRESHOLD:
+                strength_color = "orange"
+                signal_type = f"<em>{sig['type']}</em>"
+            else:
+                strength_color = "gray"
+                signal_type = sig['type']
+                
             signals_html += f"""
             <div style="border:1px solid {strength_color}; padding:5px; margin:5px; border-radius:5px;">
-                <strong>{sig['type']}</strong> | Strength: <span style="color:{strength_color}">{sig['strength']}/100</span><br>
+                {signal_type} | Strength: <span style="color:{strength_color}">{sig['strength']}/100</span><br>
                 Price: {sig['price']:.2f} | Time: {sig['time'].strftime('%H:%M')}
             </div>
             """
@@ -818,7 +886,7 @@ def dashboard():
     return f"""
     <html>
         <head>
-            <title>Crypto Trading Bot - Signal Strength System</title>
+            <title>Crypto Trading Bot - 3-Level Signal System</title>
             <style>
                 body {{ font-family: Arial, sans-serif; margin: 20px; }}
                 .metric {{ background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 5px; }}
@@ -829,7 +897,7 @@ def dashboard():
             </style>
         </head>
         <body>
-            <h1>📊 Crypto Trading Bot - Signal Strength System</h1>
+            <h1>📊 Crypto Trading Bot - 3-Level Signal System</h1>
             
             <div class="metric">
                 <h3>📈 Market Overview</h3>
@@ -840,9 +908,10 @@ def dashboard():
             </div>
             
             <div class="metric">
-                <h3>⚙️ Configuration</h3>
-                <p><strong>Signal Threshold:</strong> {SIGNAL_THRESHOLD}/100</p>
-                <p><strong>High Strength Level:</strong> {HIGH_STRENGTH}/100</p>
+                <h3>⚙️ Signal Configuration</h3>
+                <p><strong>MEDIUM (Watch):</strong> {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100</p>
+                <p><strong>STRONG (Entry):</strong> {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100</p>
+                <p><strong>VERY STRONG:</strong> {HIGH_STRENGTH}+/100</p>
                 <p><strong>Timeframes:</strong> {INTERVAL} (Primary), {CONFIRM_TF} (Confirmation)</p>
             </div>
             
@@ -855,6 +924,7 @@ def dashboard():
             
             <div class="metric">
                 <h3>📨 Recent Signals</h3>
+                <p><span style="color:green">●</span> STRONG | <span style="color:orange">●</span> MEDIUM</p>
                 {signals_html if signals_html else "<p>No signals yet</p>"}
             </div>
             
@@ -887,7 +957,11 @@ def health():
         "data_4h_candles": len(state.klines_h4),
         "data_30m_candles": len(state.klines_m30),
         "last_signal": state.last_signal_time.isoformat() if state.last_signal_time else None,
-        "signal_threshold": SIGNAL_THRESHOLD,
+        "signal_levels": {
+            "medium_threshold": MEDIUM_THRESHOLD,
+            "strong_threshold": SIGNAL_THRESHOLD,
+            "high_strength": HIGH_STRENGTH
+        },
         "timestamp": datetime.utcnow().isoformat()
     }
     
@@ -917,8 +991,20 @@ def stats():
                 "signal_line": float(last['signal']),
                 "volume_ratio": float(last.get('volume_ratio', 0)),
                 "atr_percent": float(last.get('atr_percent', 0)),
-                "signal_strength_threshold": SIGNAL_THRESHOLD,
-                "total_signals": len(state.signals_history)
+                "signal_levels": {
+                    "medium": MEDIUM_THRESHOLD,
+                    "strong": SIGNAL_THRESHOLD,
+                    "very_strong": HIGH_STRENGTH
+                },
+                "total_signals": len(state.signals_history),
+                "recent_signals": [
+                    {
+                        "type": sig['type'],
+                        "strength": sig['strength'],
+                        "time": sig['time'].isoformat()
+                    }
+                    for sig in state.signals_history[-3:]
+                ]
             }
             
             return stats_data
@@ -932,9 +1018,12 @@ def config():
         "symbol": SYMBOL,
         "interval_primary": INTERVAL,
         "interval_confirmation": CONFIRM_TF,
-        "signal_threshold": SIGNAL_THRESHOLD,
-        "min_strength": MIN_STRENGTH,
-        "high_strength": HIGH_STRENGTH,
+        "signal_levels": {
+            "min_strength": MIN_STRENGTH,
+            "medium_threshold": MEDIUM_THRESHOLD,
+            "strong_threshold": SIGNAL_THRESHOLD,
+            "high_strength": HIGH_STRENGTH
+        },
         "weights": WEIGHTS,
         "signal_cooldown_seconds": state.signal_cooldown,
         "environment_variables": {
@@ -952,25 +1041,28 @@ def config():
 if __name__ == "__main__":
     # Startup notification
     startup_msg = f"""
-🚀 **Signal Strength Bot STARTED**
+🚀 **3-Level Signal Strength Bot STARTED**
 
 **Symbol:** {SYMBOL}
 **Timeframes:** {INTERVAL} + {CONFIRM_TF}
-**Signal Threshold:** {SIGNAL_THRESHOLD}/100
-**High Strength:** {HIGH_STRENGTH}/100
 
-**Weights:**
+**📊 Signal Levels:**
+• MEDIUM (Watch): {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100
+• STRONG (Entry): {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100  
+• VERY STRONG: {HIGH_STRENGTH}+/100
+
+**⚖️ Weights:**
 • Trend: {WEIGHTS['trend']}%
 • Momentum: {WEIGHTS['momentum']}%
 • Volume: {WEIGHTS['volume']}%
 • Structure: {WEIGHTS['structure']}%
 • Multi-TF: {WEIGHTS['multi_tf']}%
 
-**Status:** Monitoring for signals...
-**Time:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+**📈 Status:** Monitoring for 3-level signals...
+**⏰ Time:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
     """
     
-    send_ntfy(startup_msg, "🤖 Bot Started - Signal Strength System", "high", "rocket")
+    send_ntfy(startup_msg, "🤖 3-Level Signal Bot Started", "high", "rocket,chart_increasing")
     
     # Start WebSocket thread
     def run_async():
@@ -983,14 +1075,18 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     
     print(f"\n{'='*70}")
-    print(f"🤖 SIGNAL STRENGTH TRADING BOT")
+    print(f"🤖 3-LEVEL SIGNAL STRENGTH TRADING BOT")
     print(f"{'='*70}")
     print(f"📊 Symbol: {SYMBOL}")
     print(f"⏰ Timeframes: {INTERVAL} (Primary), {CONFIRM_TF} (Confirmation)")
-    print(f"🎯 Signal Threshold: {SIGNAL_THRESHOLD}/100")
-    print(f"🏆 High Strength: {HIGH_STRENGTH}/100")
-    print(f"📈 Weights: Trend({WEIGHTS['trend']}%) | Momentum({WEIGHTS['momentum']}%) | Volume({WEIGHTS['volume']}%)")
-    print(f"🌐 Web Dashboard: http://localhost:{port}")
+    print(f"\n🎯 SIGNAL LEVELS:")
+    print(f"   📍 MEDIUM (Watch): {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100")
+    print(f"   ✅ STRONG (Entry): {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100")
+    print(f"   🏆 VERY STRONG: {HIGH_STRENGTH}+/100")
+    print(f"\n⚖️ Weights: Trend({WEIGHTS['trend']}%) | Momentum({WEIGHTS['momentum']}%)")
+    print(f"           Volume({WEIGHTS['volume']}%) | Structure({WEIGHTS['structure']}%)")
+    print(f"           Multi-TF({WEIGHTS['multi_tf']}%)")
+    print(f"\n🌐 Web Dashboard: http://localhost:{port}")
     print(f"{'='*70}")
     print(f"⏳ Waiting for data and calculating signal strengths...\n")
     
