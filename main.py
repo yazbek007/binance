@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import requests
 from binance import AsyncClient, BinanceSocketManager
 import pandas as pd
-from flask import Flask
+from flask import Flask, jsonify
 import numpy as np
 from typing import Dict, List, Tuple, Optional
 import json
@@ -832,74 +832,86 @@ async def run_websockets():
 
 app = Flask(__name__)
 
-@app.route('/')
-def dashboard():
-    """Enhanced dashboard with real-time monitoring"""
+# دوال مساعدة للواجهة
+def calculate_24h_change():
+    """Calculate 24-hour price change"""
     with state.lock:
-        # جلب جميع البيانات
-        market_data = get_market_data()
-        indicators = get_current_indicators()
-        signals = get_recent_signals()
-        performance = get_bot_performance()
-        
-    return render_template('dashboard.html',
-                         market_data=market_data,
-                         indicators=indicators,
-                         signals=signals,
-                         performance=performance,
-                         config=config)
+        if len(state.klines_h4) < 6:
+            return 0
+        try:
+            current_price = float(state.klines_h4[-1]['close'])
+            price_24h_ago = float(state.klines_h4[-6]['close'])
+            return ((current_price - price_24h_ago) / price_24h_ago) * 100
+        except:
+            return 0
 
-@app.route('/api/market')
-def api_market():
-    """API for real-time market data"""
+def get_current_signal_strength():
+    """Get current signal strength for both directions"""
     with state.lock:
-        if not state.klines_m30:
-            return jsonify({"error": "No data"}), 404
+        if len(state.klines_h4) < 100:
+            return {"long": 0, "short": 0}
         
-        latest = state.klines_m30[-1]
-        data = {
-            "price": latest['close'],
-            "open": latest['open'],
-            "high": latest['high'],
-            "low": latest['low'],
-            "volume": latest['volume'],
-            "time": latest['time'].isoformat(),
-            "change_24h": calculate_24h_change(),
-            "signal_strength": get_current_signal_strength()
-        }
-    return jsonify(data)
+        try:
+            df_h4 = pd.DataFrame(state.klines_h4[-100:])
+            df_m30 = pd.DataFrame(state.klines_m30[-50:])
+            
+            numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+            df_h4[numeric_cols] = df_h4[numeric_cols].apply(pd.to_numeric, errors='coerce')
+            df_m30[numeric_cols] = df_m30[numeric_cols].apply(pd.to_numeric, errors='coerce')
+            
+            df_h4 = compute_indicators(df_h4)
+            df_m30 = compute_indicators(df_m30)
+            
+            long_strength = calculate_signal_strength(df_h4, df_m30, "LONG")
+            short_strength = calculate_signal_strength(df_h4, df_m30, "SHORT")
+            
+            return {"long": long_strength.strength, "short": short_strength.strength}
+        except:
+            return {"long": 0, "short": 0}
 
 def get_market_data():
     """Get current market data"""
     with state.lock:
         if not state.klines_m30 or not state.klines_h4:
             return {
-                "price": "N/A",
-                "change_24h": "N/A",
-                "volume_24h": "N/A",
-                "market_cap": "N/A"
+                "price": 0,
+                "change_24h": 0,
+                "volume_24h": 0,
+                "market_cap": 0
             }
         
-        latest_30m = state.klines_m30[-1]
-        latest_h4 = state.klines_h4[-1] if state.klines_h4 else latest_30m
-        
-        # حساب التغير خلال 24 ساعة
-        if len(state.klines_h4) >= 6:  # 6 شموع × 4 ساعات = 24 ساعة
-            price_24h_ago = state.klines_h4[-6]['close'] if len(state.klines_h4) >= 6 else latest_h4['close']
-            change_24h = ((latest_h4['close'] - price_24h_ago) / price_24h_ago) * 100
-        else:
-            change_24h = 0
-        
-        return {
-            "symbol": SYMBOL,
-            "current_price": latest_30m['close'],
-            "open": latest_h4['open'],
-            "high_24h": get_24h_high(),
-            "low_24h": get_24h_low(),
-            "volume_24h": get_24h_volume(),
-            "change_24h": change_24h,
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        try:
+            latest_30m = state.klines_m30[-1]
+            latest_h4 = state.klines_h4[-1] if state.klines_h4 else latest_30m
+            
+            # حساب التغير خلال 24 ساعة
+            if len(state.klines_h4) >= 6:
+                price_24h_ago = state.klines_h4[-6]['close'] if len(state.klines_h4) >= 6 else latest_h4['close']
+                change_24h = ((latest_h4['close'] - price_24h_ago) / price_24h_ago) * 100
+            else:
+                change_24h = 0
+            
+            return {
+                "symbol": SYMBOL,
+                "current_price": latest_30m['close'],
+                "open": latest_h4['open'],
+                "high_24h": get_24h_high(),
+                "low_24h": get_24h_low(),
+                "volume_24h": get_24h_volume(),
+                "change_24h": change_24h,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        except:
+            return {
+                "symbol": SYMBOL,
+                "current_price": 0,
+                "open": 0,
+                "high_24h": 0,
+                "low_24h": 0,
+                "volume_24h": 0,
+                "change_24h": 0,
+                "timestamp": datetime.utcnow().isoformat()
+            }
 
 def get_current_indicators():
     """Get current technical indicators"""
@@ -1009,35 +1021,34 @@ def get_24h_high():
     """Get 24-hour high price"""
     with state.lock:
         if len(state.klines_h4) < 6:
-            return "N/A"
+            return 0
         
         recent_candles = state.klines_h4[-6:]
-        highs = [c['high'] for c in recent_candles]
-        return max(highs)
+        highs = [float(c['high']) for c in recent_candles]
+        return max(highs) if highs else 0
 
 def get_24h_low():
     """Get 24-hour low price"""
     with state.lock:
         if len(state.klines_h4) < 6:
-            return "N/A"
+            return 0
         
         recent_candles = state.klines_h4[-6:]
-        lows = [c['low'] for c in recent_candles]
-        return min(lows)
+        lows = [float(c['low']) for c in recent_candles]
+        return min(lows) if lows else 0
 
 def get_24h_volume():
     """Get 24-hour volume"""
     with state.lock:
         if len(state.klines_h4) < 6:
-            return "N/A"
+            return 0
         
         recent_candles = state.klines_h4[-6:]
-        volumes = [c['volume'] for c in recent_candles]
-        return sum(volumes)
+        volumes = [float(c['volume']) for c in recent_candles]
+        return sum(volumes) if volumes else 0
 
 def calculate_success_rate():
     """Calculate signal success rate (مثال مبسط)"""
-    # في الإصدار الحقيقي، تحتاج لتتبع نتائج الإشارات
     return 0  # مؤقتاً
 
 def get_time_ago(dt):
@@ -1059,19 +1070,80 @@ def get_uptime():
     if not state.klines_h4:
         return "N/A"
     
-    start_time = state.klines_h4[0]['time']
-    uptime = datetime.utcnow() - start_time
-    
-    if uptime.days > 0:
-        return f"{uptime.days}d {uptime.seconds // 3600}h"
-    elif uptime.seconds // 3600 > 0:
-        return f"{uptime.seconds // 3600}h {(uptime.seconds % 3600) // 60}m"
-    else:
-        return f"{uptime.seconds // 60}m"
+    try:
+        start_time = state.klines_h4[0]['time']
+        uptime = datetime.utcnow() - start_time
+        
+        if uptime.days > 0:
+            return f"{uptime.days}d {uptime.seconds // 3600}h"
+        elif uptime.seconds // 3600 > 0:
+            return f"{uptime.seconds // 3600}h {(uptime.seconds % 3600) // 60}m"
+        else:
+            return f"{uptime.seconds // 60}m"
+    except:
+        return "N/A"
 
-# Routes جديدة ومطورة
+# Routes
+@app.route('/')
+def index():
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Crypto Trading Bot</title>
+        <meta http-equiv="refresh" content="0; url=/dashboard">
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+            }
+            .container {
+                text-align: center;
+                padding: 40px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 20px;
+                backdrop-filter: blur(10px);
+            }
+            h1 {
+                font-size: 2.5em;
+                margin-bottom: 20px;
+            }
+            p {
+                font-size: 1.2em;
+                margin-bottom: 30px;
+            }
+            a {
+                color: white;
+                text-decoration: none;
+                background: rgba(255, 255, 255, 0.2);
+                padding: 10px 20px;
+                border-radius: 10px;
+                transition: background 0.3s;
+            }
+            a:hover {
+                background: rgba(255, 255, 255, 0.3);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🚀 Crypto Trading Bot</h1>
+            <p>Advanced 3-Level Signal Strength Trading System</p>
+            <p>Redirecting to dashboard...</p>
+            <p><a href="/dashboard">Click here if not redirected</a></p>
+        </div>
+    </body>
+    </html>
+    """
+
 @app.route('/dashboard')
-def enhanced_dashboard():
+def dashboard():
     """Enhanced dashboard with all monitoring data"""
     with state.lock:
         market_data = get_market_data()
@@ -1389,7 +1461,7 @@ def enhanced_dashboard():
                                                 </td>
                                                 <td>
                                                     <span class="badge {'bg-success' if sig['strength'] >= SIGNAL_THRESHOLD else 'bg-warning'}">
-                                                        { 'STRONG' if sig['strength'] >= SIGNAL_THRESHOLD else 'MEDIUM' }
+                                                        {{ 'STRONG' if sig['strength'] >= SIGNAL_THRESHOLD else 'MEDIUM' }}
                                                     </span>
                                                 </td>
                                             </tr>
@@ -1533,7 +1605,30 @@ def enhanced_dashboard():
     </html>
     """
 
-# API endpoints جديدة
+# API endpoints
+@app.route('/api/market')
+def api_market():
+    """API for real-time market data"""
+    with state.lock:
+        if not state.klines_m30:
+            return jsonify({"error": "No data"}), 404
+        
+        try:
+            latest = state.klines_m30[-1]
+            data = {
+                "price": float(latest['close']),
+                "open": float(latest['open']),
+                "high": float(latest['high']),
+                "low": float(latest['low']),
+                "volume": float(latest['volume']),
+                "time": latest['time'].isoformat() if hasattr(latest['time'], 'isoformat') else str(latest['time']),
+                "change_24h": calculate_24h_change(),
+                "signal_strength": get_current_signal_strength()
+            }
+            return jsonify(data)
+        except:
+            return jsonify({"error": "Error processing data"}), 500
+
 @app.route('/api/signals')
 def api_signals():
     """API for signals data"""
@@ -1600,14 +1695,14 @@ def health():
         "timestamp": datetime.utcnow().isoformat()
     }
     
-    return status, 200 if data_ok else 202
+    return jsonify(status), 200 if data_ok else 202
 
 @app.route('/stats')
 def stats():
     """Detailed statistics endpoint"""
     with state.lock:
         if not state.klines_h4:
-            return {"error": "Insufficient data"}, 200
+            return jsonify({"error": "Insufficient data"}), 200
         
         try:
             df = pd.DataFrame(state.klines_h4[-100:])
@@ -1642,9 +1737,9 @@ def stats():
                 ]
             }
             
-            return stats_data
+            return jsonify(stats_data)
         except Exception as e:
-            return {"error": str(e)}, 500
+            return jsonify({"error": str(e)}), 500
 
 @app.route('/config')
 def config():
@@ -1667,7 +1762,7 @@ def config():
         }
     }
     
-    return config_data
+    return jsonify(config_data)
 
 # ────────────────────────────────────────────────
 #                   Main Entry
