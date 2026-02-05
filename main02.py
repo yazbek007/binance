@@ -839,24 +839,36 @@ def dashboard():
         h4_count = len(state.klines_h4)
         m30_count = len(state.klines_m30)
         
+        # تهيئة القاموس بقيم افتراضية
         market_data = {
             'current_price': "N/A",
             'price_change_24h': "N/A",
+            'price_change_color': "black",
             'volume_24h': "N/A",
             'high_24h': "N/A",
             'low_24h': "N/A",
             'current_rsi': "N/A",
             'rsi_trend': "N/A",
+            'rsi_zone': "N/A",
+            'macd_value': "N/A",
+            'macd_signal': "N/A",
             'macd_status': "N/A",
+            'macd_histogram': "N/A",
             'trend_status': "N/A",
+            'trend_color': "gray",
+            'atr_percent': "N/A",
             'volatility': "N/A",
-            'support_level': "N/A",
             'resistance_level': "N/A",
+            'support_level': "N/A",
             'market_sentiment': "N/A",
-            'long_strength': "N/A",
-            'short_strength': "N/A",
+            'long_strength': 0,
+            'long_confidence': "N/A",
+            'short_strength': 0,
+            'short_confidence': "N/A",
             'ema_alignment': "N/A",
-            'volume_status': "N/A"
+            'volume_status': "N/A",
+            'ema_distance_20_50': "N/A",
+            'ema_distance_50_200': "N/A"
         }
         
         try:
@@ -900,21 +912,37 @@ def dashboard():
                     market_data['volume_24h'] = f"{recent_volume:,.0f}"
                 
                 # مؤشرات فنية
-                market_data['current_rsi'] = f"{last_h4['rsi']:.1f}"
-                market_data['rsi_trend'] = "صاعد" if last_h4['rsi'] > prev_h4['rsi'] else "هابط"
-                market_data['rsi_zone'] = str(last_h4.get('rsi_zone', 'NEUTRAL'))
+                market_data['current_rsi'] = f"{last_h4.get('rsi', 0):.1f}"
+                market_data['rsi_trend'] = "صاعد" if last_h4.get('rsi', 0) > prev_h4.get('rsi', 0) else "هابط"
+                
+                # تحديد منطقة RSI
+                rsi_val = last_h4.get('rsi', 50)
+                if rsi_val >= 70:
+                    market_data['rsi_zone'] = "OVERBOUGHT"
+                elif rsi_val >= 60:
+                    market_data['rsi_zone'] = "BULLISH"
+                elif rsi_val >= 40:
+                    market_data['rsi_zone'] = "NEUTRAL"
+                elif rsi_val >= 30:
+                    market_data['rsi_zone'] = "BEARISH"
+                else:
+                    market_data['rsi_zone'] = "OVERSOLD"
                 
                 # MACD
-                market_data['macd_value'] = f"{last_h4['macd']:.5f}"
-                market_data['macd_signal'] = f"{last_h4['signal']:.5f}"
-                market_data['macd_status'] = "إيجابي" if last_h4['macd'] > last_h4['signal'] else "سلبي"
-                market_data['macd_histogram'] = f"{last_h4['hist']:.5f}"
+                market_data['macd_value'] = f"{last_h4.get('macd', 0):.5f}"
+                market_data['macd_signal'] = f"{last_h4.get('signal', 0):.5f}"
+                market_data['macd_status'] = "إيجابي" if last_h4.get('macd', 0) > last_h4.get('signal', 0) else "سلبي"
+                market_data['macd_histogram'] = f"{last_h4.get('hist', 0):.5f}"
                 
                 # الاتجاه العام
-                if last_h4['ema20'] > last_h4['ema50'] > last_h4['ema200']:
+                ema20 = last_h4.get('ema20', 0)
+                ema50 = last_h4.get('ema50', 0)
+                ema200 = last_h4.get('ema200', 0)
+                
+                if ema20 > ema50 > ema200:
                     market_data['trend_status'] = "صاعد قوي"
                     market_data['trend_color'] = "green"
-                elif last_h4['ema20'] < last_h4['ema50'] < last_h4['ema200']:
+                elif ema20 < ema50 < ema200:
                     market_data['trend_status'] = "هابط قوي"
                     market_data['trend_color'] = "red"
                 else:
@@ -922,38 +950,52 @@ def dashboard():
                     market_data['trend_color'] = "gray"
                 
                 # تقارب/تباعد المتوسطات
-                ema_distance_20_50 = abs(last_h4['ema20'] - last_h4['ema50']) / last_h4['ema50'] * 100
-                ema_distance_50_200 = abs(last_h4['ema50'] - last_h4['ema200']) / last_h4['ema200'] * 100
-                market_data['ema_alignment'] = f"20-50: {ema_distance_20_50:.1f}% | 50-200: {ema_distance_50_200:.1f}%"
+                if ema50 > 0:
+                    ema_distance_20_50 = abs(ema20 - ema50) / ema50 * 100
+                    market_data['ema_distance_20_50'] = f"{ema_distance_20_50:.1f}%"
+                
+                if ema200 > 0:
+                    ema_distance_50_200 = abs(ema50 - ema200) / ema200 * 100
+                    market_data['ema_distance_50_200'] = f"{ema_distance_50_200:.1f}%"
+                
+                market_data['ema_alignment'] = f"20-50: {market_data['ema_distance_20_50']} | 50-200: {market_data['ema_distance_50_200']}"
                 
                 # التقلب
-                market_data['atr_percent'] = f"{last_h4.get('atr_percent', 0):.2f}%"
-                market_data['volatility'] = "مرتفع" if last_h4.get('atr_percent', 0) > 2 else "منخفض"
+                atr_percent = last_h4.get('atr_percent', 0)
+                market_data['atr_percent'] = f"{atr_percent:.2f}%"
+                market_data['volatility'] = "مرتفع" if atr_percent > 2 else "منخفض"
                 
                 # مستويات الدعم والمقاومة (مبسطة)
-                recent_highs = df_h4['high'].iloc[-10:].tolist()
-                recent_lows = df_h4['low'].iloc[-10:].tolist()
-                market_data['resistance_level'] = f"{max(recent_highs):,.2f}"
-                market_data['support_level'] = f"{min(recent_lows):,.2f}"
+                if len(df_h4) >= 10:
+                    recent_highs = df_h4['high'].iloc[-10:].tolist()
+                    recent_lows = df_h4['low'].iloc[-10:].tolist()
+                    if recent_highs:
+                        market_data['resistance_level'] = f"{max(recent_highs):,.2f}"
+                    if recent_lows:
+                        market_data['support_level'] = f"{min(recent_lows):,.2f}"
                 
                 # قوة الإشارات
-                long_metrics = calculate_signal_strength(df_h4, df_m30, "LONG")
-                short_metrics = calculate_signal_strength(df_h4, df_m30, "SHORT")
-                
-                market_data['long_strength'] = long_metrics.strength
-                market_data['long_confidence'] = long_metrics.confidence
-                market_data['short_strength'] = short_metrics.strength
-                market_data['short_confidence'] = short_metrics.confidence
-                
-                # تحليل المشاعر
-                if long_metrics.strength >= SIGNAL_THRESHOLD:
-                    market_data['market_sentiment'] = "صعودي قوي"
-                elif short_metrics.strength >= SIGNAL_THRESHOLD:
-                    market_data['market_sentiment'] = "هبوطي قوي"
-                elif long_metrics.strength > short_metrics.strength:
-                    market_data['market_sentiment'] = "صعودي معتدل"
-                else:
-                    market_data['market_sentiment'] = "هبوطي معتدل"
+                try:
+                    long_metrics = calculate_signal_strength(df_h4, df_m30, "LONG")
+                    short_metrics = calculate_signal_strength(df_h4, df_m30, "SHORT")
+                    
+                    market_data['long_strength'] = long_metrics.strength
+                    market_data['long_confidence'] = long_metrics.confidence
+                    market_data['short_strength'] = short_metrics.strength
+                    market_data['short_confidence'] = short_metrics.confidence
+                    
+                    # تحليل المشاعر
+                    if long_metrics.strength >= SIGNAL_THRESHOLD:
+                        market_data['market_sentiment'] = "صعودي قوي"
+                    elif short_metrics.strength >= SIGNAL_THRESHOLD:
+                        market_data['market_sentiment'] = "هبوطي قوي"
+                    elif long_metrics.strength > short_metrics.strength:
+                        market_data['market_sentiment'] = "صعودي معتدل"
+                    else:
+                        market_data['market_sentiment'] = "هبوطي معتدل"
+                except Exception as e:
+                    print(f"Error calculating signal strength: {e}")
+                    market_data['market_sentiment'] = "غير متوفر"
                 
                 # حالة الحجم
                 volume_ratio = last_h4.get('volume_ratio', 1)
@@ -1031,6 +1073,7 @@ def dashboard():
             </div>
             """
     
+    # التحديث النهائي لواجهة HTML مع التصحيحات
     return f"""
     <html>
         <head>
@@ -1363,7 +1406,7 @@ def dashboard():
                             </div>
                             <div class="info-item">
                                 <div class="info-label">التغير (24س)</div>
-                                <div class="info-value" style="color:{market_data.get('price_change_color', 'black')}">
+                                <div class="info-value" style="color:{market_data['price_change_color']}">
                                     {market_data['price_change_24h']}
                                 </div>
                             </div>
@@ -1381,7 +1424,7 @@ def dashboard():
                             </div>
                             <div class="info-item">
                                 <div class="info-label">مشاعر السوق</div>
-                                <div class="info-value" style="color:{market_data.get('trend_color', 'black')}">
+                                <div class="info-value" style="color:{market_data['trend_color']}">
                                     {market_data['market_sentiment']}
                                 </div>
                             </div>
@@ -1399,14 +1442,14 @@ def dashboard():
                             </div>
                             <div class="info-item">
                                 <div class="info-label">MACD</div>
-                                <div class="info-value" style="color:{'green' if market_data.get('macd_status') == 'إيجابي' else 'red'}">
-                                    {market_data.get('macd_status', 'N/A')}
+                                <div class="info-value" style="color:{'green' if market_data['macd_status'] == 'إيجابي' else 'red'}">
+                                    {market_data['macd_status']}
                                 </div>
-                                <small>القيمة: {market_data.get('macd_value', 'N/A')}</small>
+                                <small>القيمة: {market_data['macd_value']}</small>
                             </div>
                             <div class="info-item">
                                 <div class="info-label">الاتجاه</div>
-                                <div class="info-value" style="color:{market_data.get('trend_color', 'black')}">
+                                <div class="info-value" style="color:{market_data['trend_color']}">
                                     {market_data['trend_status']}
                                 </div>
                             </div>
@@ -1432,21 +1475,21 @@ def dashboard():
                         
                         <div style="margin-bottom: 20px;">
                             <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                                <span>قوة الشراء: {market_data.get('long_strength', 'N/A')}/100</span>
-                                <span style="color: var(--success-color)">{market_data.get('long_confidence', 'N/A')}</span>
+                                <span>قوة الشراء: {market_data['long_strength']}/100</span>
+                                <span style="color: var(--success-color)">{market_data['long_confidence']}</span>
                             </div>
                             <div class="strength-bar">
-                                <div class="strength-fill long" style="width: {market_data.get('long_strength', 0)}%"></div>
+                                <div class="strength-fill long" style="width: {market_data['long_strength']}%"></div>
                             </div>
                         </div>
                         
                         <div style="margin-bottom: 20px;">
                             <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                                <span>قوة البيع: {market_data.get('short_strength', 'N/A')}/100</span>
-                                <span style="color: var(--danger-color)">{market_data.get('short_confidence', 'N/A')}</span>
+                                <span>قوة البيع: {market_data['short_strength']}/100</span>
+                                <span style="color: var(--danger-color)">{market_data['short_confidence']}</span>
                             </div>
                             <div class="strength-bar">
-                                <div class="strength-fill short" style="width: {market_data.get('short_strength', 0)}%"></div>
+                                <div class="strength-fill short" style="width: {market_data['short_strength']}%"></div>
                             </div>
                         </div>
                         
