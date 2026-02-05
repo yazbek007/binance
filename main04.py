@@ -26,15 +26,6 @@ import base64
 #                 CONFIGURATION
 # ────────────────────────────────────────────────
 
-# Simple health check endpoint - يجب أن يكون أول @app.route
-@app.route('/health')
-def simple_health():
-    return "OK", 200
-
-@app.route('/')
-def dashboard():
-    """Main dashboard"""
-    return generate_dashboard_html()
 
 API_KEY    = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
@@ -240,16 +231,22 @@ state = TradingState()
 
 app = Flask(__name__)
 
+@app.route('/health')
+def simple_health():
+    """Simple health check endpoint for Render"""
+    return "OK", 200
+
 @app.route('/ping')
 def ping():
-    """Simple health check endpoint for Render"""
+    """Health check with more details"""
     return jsonify({
         "status": "running",
         "service": "crypto-trading-bot",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "port": os.environ.get("PORT", 10000),
-        "version": "1.0.0"
+        "port": os.environ.get("PORT", 10000)
     }), 200
+
+
 
 def generate_dashboard_html():
     """Generate complete dashboard HTML"""
