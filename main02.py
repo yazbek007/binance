@@ -834,17 +834,34 @@ app = Flask(__name__)
 
 @app.route('/')
 def dashboard():
-    """Main dashboard with signal strength display"""
+    """Main dashboard with enhanced market information"""
     with state.lock:
         h4_count = len(state.klines_h4)
         m30_count = len(state.klines_m30)
         
-        current_price = "N/A"
-        current_rsi = "N/A"
-        current_strength = "N/A"
+        market_data = {
+            'current_price': "N/A",
+            'price_change_24h': "N/A",
+            'volume_24h': "N/A",
+            'high_24h': "N/A",
+            'low_24h': "N/A",
+            'current_rsi': "N/A",
+            'rsi_trend': "N/A",
+            'macd_status': "N/A",
+            'trend_status': "N/A",
+            'volatility': "N/A",
+            'support_level': "N/A",
+            'resistance_level': "N/A",
+            'market_sentiment': "N/A",
+            'long_strength': "N/A",
+            'short_strength': "N/A",
+            'ema_alignment': "N/A",
+            'volume_status': "N/A"
+        }
         
         try:
             if state.klines_h4 and state.klines_m30:
+                # تحضير البيانات
                 df_h4 = pd.DataFrame(state.klines_h4[-100:])
                 df_m30 = pd.DataFrame(state.klines_m30[-50:])
                 
@@ -853,92 +870,685 @@ def dashboard():
                 df_m30[numeric_cols] = df_m30[numeric_cols].apply(pd.to_numeric, errors='coerce')
                 
                 df_h4 = compute_indicators(df_h4)
+                df_m30 = compute_indicators(df_m30)
+                
                 last_h4 = df_h4.iloc[-1]
+                prev_h4 = df_h4.iloc[-2]
+                last_m30 = df_m30.iloc[-1]
                 
+                # معلومات الأسعار والتغيرات
                 current_price = float(state.klines_m30[-1]['close'])
-                current_rsi = last_h4['rsi']
+                market_data['current_price'] = f"{current_price:,.2f}"
                 
-                long_strength = calculate_signal_strength(df_h4, df_m30, "LONG").strength
-                short_strength = calculate_signal_strength(df_h4, df_m30, "SHORT").strength
-                current_strength = f"LONG: {long_strength}/100 | SHORT: {short_strength}/100"
+                # حساب التغير في آخر 24 ساعة (أو آخر 6 شموع 4H)
+                if len(state.klines_h4) >= 6:
+                    price_24h_ago = float(state.klines_h4[-6]['close'])
+                    price_change = ((current_price - price_24h_ago) / price_24h_ago) * 100
+                    market_data['price_change_24h'] = f"{price_change:+.2f}%"
+                    market_data['price_change_color'] = "green" if price_change >= 0 else "red"
+                
+                # أعلى وأقل سعر في آخر 24 ساعة
+                if len(state.klines_h4) >= 6:
+                    recent_prices = [float(k['high']) for k in state.klines_h4[-6:]]
+                    market_data['high_24h'] = f"{max(recent_prices):,.2f}"
+                    recent_lows = [float(k['low']) for k in state.klines_h4[-6:]]
+                    market_data['low_24h'] = f"{min(recent_lows):,.2f}"
+                
+                # حجم التداول
+                if len(state.klines_h4) >= 6:
+                    recent_volume = sum(float(k['volume']) for k in state.klines_h4[-6:])
+                    market_data['volume_24h'] = f"{recent_volume:,.0f}"
+                
+                # مؤشرات فنية
+                market_data['current_rsi'] = f"{last_h4['rsi']:.1f}"
+                market_data['rsi_trend'] = "صاعد" if last_h4['rsi'] > prev_h4['rsi'] else "هابط"
+                market_data['rsi_zone'] = str(last_h4.get('rsi_zone', 'NEUTRAL'))
+                
+                # MACD
+                market_data['macd_value'] = f"{last_h4['macd']:.5f}"
+                market_data['macd_signal'] = f"{last_h4['signal']:.5f}"
+                market_data['macd_status'] = "إيجابي" if last_h4['macd'] > last_h4['signal'] else "سلبي"
+                market_data['macd_histogram'] = f"{last_h4['hist']:.5f}"
+                
+                # الاتجاه العام
+                if last_h4['ema20'] > last_h4['ema50'] > last_h4['ema200']:
+                    market_data['trend_status'] = "صاعد قوي"
+                    market_data['trend_color'] = "green"
+                elif last_h4['ema20'] < last_h4['ema50'] < last_h4['ema200']:
+                    market_data['trend_status'] = "هابط قوي"
+                    market_data['trend_color'] = "red"
+                else:
+                    market_data['trend_status'] = "جانبي"
+                    market_data['trend_color'] = "gray"
+                
+                # تقارب/تباعد المتوسطات
+                ema_distance_20_50 = abs(last_h4['ema20'] - last_h4['ema50']) / last_h4['ema50'] * 100
+                ema_distance_50_200 = abs(last_h4['ema50'] - last_h4['ema200']) / last_h4['ema200'] * 100
+                market_data['ema_alignment'] = f"20-50: {ema_distance_20_50:.1f}% | 50-200: {ema_distance_50_200:.1f}%"
+                
+                # التقلب
+                market_data['atr_percent'] = f"{last_h4.get('atr_percent', 0):.2f}%"
+                market_data['volatility'] = "مرتفع" if last_h4.get('atr_percent', 0) > 2 else "منخفض"
+                
+                # مستويات الدعم والمقاومة (مبسطة)
+                recent_highs = df_h4['high'].iloc[-10:].tolist()
+                recent_lows = df_h4['low'].iloc[-10:].tolist()
+                market_data['resistance_level'] = f"{max(recent_highs):,.2f}"
+                market_data['support_level'] = f"{min(recent_lows):,.2f}"
+                
+                # قوة الإشارات
+                long_metrics = calculate_signal_strength(df_h4, df_m30, "LONG")
+                short_metrics = calculate_signal_strength(df_h4, df_m30, "SHORT")
+                
+                market_data['long_strength'] = long_metrics.strength
+                market_data['long_confidence'] = long_metrics.confidence
+                market_data['short_strength'] = short_metrics.strength
+                market_data['short_confidence'] = short_metrics.confidence
+                
+                # تحليل المشاعر
+                if long_metrics.strength >= SIGNAL_THRESHOLD:
+                    market_data['market_sentiment'] = "صعودي قوي"
+                elif short_metrics.strength >= SIGNAL_THRESHOLD:
+                    market_data['market_sentiment'] = "هبوطي قوي"
+                elif long_metrics.strength > short_metrics.strength:
+                    market_data['market_sentiment'] = "صعودي معتدل"
+                else:
+                    market_data['market_sentiment'] = "هبوطي معتدل"
+                
+                # حالة الحجم
+                volume_ratio = last_h4.get('volume_ratio', 1)
+                if volume_ratio > 1.5:
+                    market_data['volume_status'] = "مرتفع جداً"
+                elif volume_ratio > 1.2:
+                    market_data['volume_status'] = "مرتفع"
+                elif volume_ratio > 0.8:
+                    market_data['volume_status'] = "طبيعي"
+                else:
+                    market_data['volume_status'] = "منخفض"
+                
         except Exception as e:
             print(f"Dashboard error: {e}")
+            market_data['error'] = str(e)
         
-        recent_signals = state.signals_history[-5:] if state.signals_history else []
+        # تاريخ الإشارات
+        recent_signals = state.signals_history[-10:] if state.signals_history else []
         signals_html = ""
         for sig in reversed(recent_signals):
             if sig['strength'] >= SIGNAL_THRESHOLD:
                 strength_color = "green"
                 signal_type = f"<strong>{sig['type']}</strong>"
+                signal_icon = "🚀"
             elif sig['strength'] >= MEDIUM_THRESHOLD:
                 strength_color = "orange"
                 signal_type = f"<em>{sig['type']}</em>"
+                signal_icon = "👁️"
             else:
                 strength_color = "gray"
                 signal_type = sig['type']
+                signal_icon = "📊"
                 
             signals_html += f"""
-            <div style="border:1px solid {strength_color}; padding:5px; margin:5px; border-radius:5px;">
-                {signal_type} | Strength: <span style="color:{strength_color}">{sig['strength']}/100</span><br>
-                Price: {sig['price']:.2f} | Time: {sig['time'].strftime('%H:%M')}
+            <div class="signal-card" style="border-color: {strength_color}">
+                <div class="signal-header">
+                    <span class="signal-icon">{signal_icon}</span>
+                    <span class="signal-type">{signal_type}</span>
+                    <span class="signal-strength" style="color:{strength_color}">{sig['strength']}/100</span>
+                </div>
+                <div class="signal-body">
+                    <div>السعر: {sig['price']:.2f}</div>
+                    <div>الثقة: {sig['confidence']}</div>
+                    <div>الوقت: {sig['time'].strftime('%H:%M')}</div>
+                </div>
+            </div>
+            """
+        
+        # تحليل إحصائي
+        stats_html = ""
+        if state.signals_history:
+            total_signals = len(state.signals_history)
+            strong_signals = len([s for s in state.signals_history if s['strength'] >= SIGNAL_THRESHOLD])
+            long_signals = len([s for s in state.signals_history if 'LONG' in s['type']])
+            avg_strength = sum(s['strength'] for s in state.signals_history) / total_signals
+            
+            stats_html = f"""
+            <div class="stats-summary">
+                <div class="stat-item">
+                    <span class="stat-label">إجمالي الإشارات:</span>
+                    <span class="stat-value">{total_signals}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">إشارات قوية:</span>
+                    <span class="stat-value">{strong_signals}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">إشارات شراء:</span>
+                    <span class="stat-value">{long_signals}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">متوسط القوة:</span>
+                    <span class="stat-value">{avg_strength:.1f}/100</span>
+                </div>
             </div>
             """
     
     return f"""
     <html>
         <head>
-            <title>Crypto Trading Bot - 3-Level Signal System</title>
+            <title>روبوت التداول - نظام الإشارات ثلاثي المستويات</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
-                body {{ font-family: Arial, sans-serif; margin: 20px; }}
-                .metric {{ background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 5px; }}
-                .signal {{ margin: 5px 0; padding: 5px; border-left: 4px solid; }}
+                :root {{
+                    --primary-color: #3498db;
+                    --success-color: #2ecc71;
+                    --danger-color: #e74c3c;
+                    --warning-color: #f39c12;
+                    --info-color: #9b59b6;
+                    --dark-color: #2c3e50;
+                    --light-color: #ecf0f1;
+                    --gray-color: #95a5a6;
+                }}
+                
+                * {{
+                    box-sizing: border-box;
+                    margin: 0;
+                    padding: 0;
+                }}
+                
+                body {{
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    line-height: 1.6;
+                    color: #333;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                    padding: 20px;
+                }}
+                
+                .container {{
+                    max-width: 1400px;
+                    margin: 0 auto;
+                }}
+                
+                .header {{
+                    text-align: center;
+                    margin-bottom: 30px;
+                    padding: 20px;
+                    background: rgba(255, 255, 255, 0.95);
+                    border-radius: 15px;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+                }}
+                
+                .header h1 {{
+                    color: var(--dark-color);
+                    font-size: 2.5rem;
+                    margin-bottom: 10px;
+                    background: linear-gradient(90deg, var(--primary-color), var(--info-color));
+                    -webkit-background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                }}
+                
+                .header p {{
+                    color: var(--gray-color);
+                    font-size: 1.1rem;
+                }}
+                
+                .main-grid {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+                    gap: 20px;
+                    margin-bottom: 30px;
+                }}
+                
+                .card {{
+                    background: rgba(255, 255, 255, 0.95);
+                    border-radius: 15px;
+                    padding: 25px;
+                    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+                    transition: transform 0.3s ease;
+                    border: 1px solid rgba(255,255,255,0.2);
+                }}
+                
+                .card:hover {{
+                    transform: translateY(-5px);
+                }}
+                
+                .card-title {{
+                    color: var(--dark-color);
+                    font-size: 1.4rem;
+                    margin-bottom: 20px;
+                    padding-bottom: 10px;
+                    border-bottom: 2px solid var(--light-color);
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }}
+                
+                .card-title i {{
+                    color: var(--primary-color);
+                }}
+                
+                .info-grid {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                    gap: 15px;
+                }}
+                
+                .info-item {{
+                    background: var(--light-color);
+                    padding: 15px;
+                    border-radius: 10px;
+                    transition: all 0.3s ease;
+                }}
+                
+                .info-item:hover {{
+                    background: #d5dbdb;
+                }}
+                
+                .info-label {{
+                    font-size: 0.9rem;
+                    color: var(--gray-color);
+                    margin-bottom: 5px;
+                }}
+                
+                .info-value {{
+                    font-size: 1.2rem;
+                    font-weight: bold;
+                    color: var(--dark-color);
+                }}
+                
+                .signal-grid {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                    gap: 15px;
+                    margin-top: 20px;
+                }}
+                
+                .signal-card {{
+                    background: white;
+                    border-radius: 10px;
+                    padding: 15px;
+                    border-left: 4px solid;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+                }}
+                
+                .signal-header {{
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 10px;
+                }}
+                
+                .signal-body {{
+                    display: grid;
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 8px;
+                    font-size: 0.9rem;
+                }}
+                
+                .strength-bar {{
+                    height: 10px;
+                    background: var(--light-color);
+                    border-radius: 5px;
+                    margin-top: 10px;
+                    overflow: hidden;
+                }}
+                
+                .strength-fill {{
+                    height: 100%;
+                    border-radius: 5px;
+                    transition: width 1s ease;
+                }}
+                
+                .strength-fill.long {{
+                    background: linear-gradient(90deg, var(--success-color), #27ae60);
+                }}
+                
+                .strength-fill.short {{
+                    background: linear-gradient(90deg, var(--danger-color), #c0392b);
+                }}
+                
+                .signal-levels {{
+                    display: flex;
+                    justify-content: space-between;
+                    margin-top: 20px;
+                    text-align: center;
+                }}
+                
+                .level {{
+                    flex: 1;
+                    padding: 15px;
+                    border-radius: 10px;
+                    margin: 0 5px;
+                }}
+                
+                .level.medium {{
+                    background: linear-gradient(135deg, #fdc830, #f37335);
+                    color: white;
+                }}
+                
+                .level.strong {{
+                    background: linear-gradient(135deg, #ff416c, #ff4b2b);
+                    color: white;
+                }}
+                
+                .level.very-strong {{
+                    background: linear-gradient(135deg, #11998e, #38ef7d);
+                    color: white;
+                }}
+                
+                .status-badge {{
+                    display: inline-block;
+                    padding: 5px 15px;
+                    border-radius: 20px;
+                    font-size: 0.8rem;
+                    font-weight: bold;
+                    text-transform: uppercase;
+                }}
+                
+                .status-active {{
+                    background: var(--success-color);
+                    color: white;
+                }}
+                
+                .status-warning {{
+                    background: var(--warning-color);
+                    color: white;
+                }}
+                
+                .status-danger {{
+                    background: var(--danger-color);
+                    color: white;
+                }}
+                
+                .stats-summary {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                    gap: 15px;
+                    margin-top: 20px;
+                }}
+                
+                .stat-item {{
+                    background: white;
+                    padding: 15px;
+                    border-radius: 10px;
+                    text-align: center;
+                    border: 1px solid var(--light-color);
+                }}
+                
+                .stat-label {{
+                    display: block;
+                    color: var(--gray-color);
+                    font-size: 0.9rem;
+                    margin-bottom: 5px;
+                }}
+                
+                .stat-value {{
+                    display: block;
+                    font-size: 1.5rem;
+                    font-weight: bold;
+                    color: var(--primary-color);
+                }}
+                
+                @media (max-width: 768px) {{
+                    .main-grid {{
+                        grid-template-columns: 1fr;
+                    }}
+                    
+                    .header h1 {{
+                        font-size: 2rem;
+                    }}
+                }}
+                
+                .refresh-info {{
+                    text-align: center;
+                    margin-top: 20px;
+                    color: var(--gray-color);
+                    font-size: 0.9rem;
+                }}
+                
+                .nav-links {{
+                    display: flex;
+                    justify-content: center;
+                    gap: 20px;
+                    margin-top: 20px;
+                }}
+                
+                .nav-link {{
+                    color: var(--primary-color);
+                    text-decoration: none;
+                    padding: 10px 20px;
+                    border-radius: 25px;
+                    border: 2px solid var(--primary-color);
+                    transition: all 0.3s ease;
+                }}
+                
+                .nav-link:hover {{
+                    background: var(--primary-color);
+                    color: white;
+                }}
             </style>
+            <script>
+                function refreshData() {{
+                    location.reload();
+                }}
+                
+                // تحديث تلقائي كل 60 ثانية
+                setTimeout(refreshData, 60000);
+            </script>
         </head>
         <body>
-            <h1>Crypto Trading Bot - 3-Level Signal System</h1>
-            
-            <div class="metric">
-                <h3>Market Overview</h3>
-                <p><strong>Symbol:</strong> {SYMBOL}</p>
-                <p><strong>Current Price:</strong> {current_price if isinstance(current_price, str) else f"{current_price:.2f}"}</p>
-                <p><strong>Current RSI:</strong> {current_rsi if isinstance(current_rsi, str) else f"{current_rsi:.1f}"}</p>
-                <p><strong>Signal Strengths:</strong> {current_strength}</p>
+            <div class="container">
+                <!-- Header -->
+                <div class="header">
+                    <h1>📈 روبوت التداول الذكي</h1>
+                    <p>نظام الإشارات ثلاثي المستويات | {SYMBOL}</p>
+                    <div class="nav-links">
+                        <a href="/health" class="nav-link">الحالة الصحية</a>
+                        <a href="/stats" class="nav-link">إحصائيات مفصلة</a>
+                        <a href="/config" class="nav-link">الإعدادات</a>
+                        <a href="#" class="nav-link" onclick="refreshData()">🔄 تحديث</a>
+                    </div>
+                </div>
+                
+                <!-- Main Grid -->
+                <div class="main-grid">
+                    
+                    <!-- Market Overview Card -->
+                    <div class="card">
+                        <h2 class="card-title">📊 نظرة عامة على السوق</h2>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <div class="info-label">السعر الحالي</div>
+                                <div class="info-value">{market_data['current_price']}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">التغير (24س)</div>
+                                <div class="info-value" style="color:{market_data.get('price_change_color', 'black')}">
+                                    {market_data['price_change_24h']}
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">الحجم (24س)</div>
+                                <div class="info-value">{market_data['volume_24h']}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">الأعلى (24س)</div>
+                                <div class="info-value">{market_data['high_24h']}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">الأدنى (24س)</div>
+                                <div class="info-value">{market_data['low_24h']}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">مشاعر السوق</div>
+                                <div class="info-value" style="color:{market_data.get('trend_color', 'black')}">
+                                    {market_data['market_sentiment']}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Technical Indicators Card -->
+                    <div class="card">
+                        <h2 class="card-title">🔍 المؤشرات الفنية</h2>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <div class="info-label">RSI</div>
+                                <div class="info-value">{market_data['current_rsi']}</div>
+                                <small>{market_data['rsi_zone']} | {market_data['rsi_trend']}</small>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">MACD</div>
+                                <div class="info-value" style="color:{'green' if market_data.get('macd_status') == 'إيجابي' else 'red'}">
+                                    {market_data.get('macd_status', 'N/A')}
+                                </div>
+                                <small>القيمة: {market_data.get('macd_value', 'N/A')}</small>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">الاتجاه</div>
+                                <div class="info-value" style="color:{market_data.get('trend_color', 'black')}">
+                                    {market_data['trend_status']}
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">التقلب (ATR)</div>
+                                <div class="info-value">{market_data['atr_percent']}</div>
+                                <small>{market_data['volatility']}</small>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">حالة الحجم</div>
+                                <div class="info-value">{market_data['volume_status']}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">تقارب المتوسطات</div>
+                                <div class="info-value" style="font-size:0.9rem">{market_data['ema_alignment']}</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Signal Strengths Card -->
+                    <div class="card">
+                        <h2 class="card-title">📈 قوة الإشارات</h2>
+                        
+                        <div style="margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                <span>قوة الشراء: {market_data.get('long_strength', 'N/A')}/100</span>
+                                <span style="color: var(--success-color)">{market_data.get('long_confidence', 'N/A')}</span>
+                            </div>
+                            <div class="strength-bar">
+                                <div class="strength-fill long" style="width: {market_data.get('long_strength', 0)}%"></div>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                <span>قوة البيع: {market_data.get('short_strength', 'N/A')}/100</span>
+                                <span style="color: var(--danger-color)">{market_data.get('short_confidence', 'N/A')}</span>
+                            </div>
+                            <div class="strength-bar">
+                                <div class="strength-fill short" style="width: {market_data.get('short_strength', 0)}%"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="signal-levels">
+                            <div class="level medium">
+                                <div>👁️ MEDIUM</div>
+                                <div>{MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}</div>
+                                <small>مراقبة</small>
+                            </div>
+                            <div class="level strong">
+                                <div>🚀 STRONG</div>
+                                <div>{SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}</div>
+                                <small>تنفيذ</small>
+                            </div>
+                            <div class="level very-strong">
+                                <div>💎 VERY STRONG</div>
+                                <div>{HIGH_STRENGTH}+</div>
+                                <small>ممتاز</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Support & Resistance Card -->
+                    <div class="card">
+                        <h2 class="card-title">🎯 الدعم والمقاومة</h2>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <div class="info-label">مستوى المقاومة</div>
+                                <div class="info-value" style="color: var(--danger-color)">{market_data['resistance_level']}</div>
+                                <small>أعلى 10 شموع</small>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">مستوى الدعم</div>
+                                <div class="info-value" style="color: var(--success-color)">{market_data['support_level']}</div>
+                                <small>أقل 10 شموع</small>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 20px; padding: 15px; background: var(--light-color); border-radius: 10px;">
+                            <h3 style="margin-bottom: 10px; color: var(--dark-color);">🎲 إحصائيات النظام</h3>
+                            {stats_html if stats_html else "<p>لا توجد إحصائيات بعد</p>"}
+                        </div>
+                    </div>
+                    
+                    <!-- Recent Signals Card -->
+                    <div class="card" style="grid-column: span 2;">
+                        <h2 class="card-title">📨 الإشارات الأخيرة</h2>
+                        <div class="signal-grid">
+                            {signals_html if signals_html else '<div style="text-align: center; padding: 40px; color: var(--gray-color);">لا توجد إشارات حالياً</div>'}
+                        </div>
+                    </div>
+                    
+                    <!-- Data Status Card -->
+                    <div class="card">
+                        <h2 class="card-title">🔄 حالة البيانات</h2>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <div class="info-label">شموع 4 ساعات</div>
+                                <div class="info-value">{h4_count}</div>
+                                <small>المطلوب: 210</small>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">شموع 30 دقيقة</div>
+                                <div class="info-value">{m30_count}</div>
+                                <small>المطلوب: 50</small>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">الإشارات المسجلة</div>
+                                <div class="info-value">{len(state.signals_history)}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">آخر تحديث</div>
+                                <div class="info-value">{datetime.utcnow().strftime('%H:%M UTC')}</div>
+                                <small>{datetime.utcnow().strftime('%Y-%m-%d')}</small>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 20px; text-align: center;">
+                            <span class="status-badge status-active">✅ النظام يعمل</span>
+                            {f'<span style="margin-left: 10px; color: var(--gray-color); font-size: 0.9rem;">آخر إشارة: {state.last_signal_time.strftime("%H:%M") if state.last_signal_time else "لا يوجد"}</span>' if state.last_signal_time else ''}
+                        </div>
+                    </div>
+                    
+                </div>
+                
+                <div class="refresh-info">
+                    <p>سيتم تحديث البيانات تلقائياً خلال <span id="countdown">60</span> ثانية</p>
+                    <p><small>© 2024 نظام التداول الذكي ثلاثي المستويات</small></p>
+                </div>
             </div>
             
-            <div class="metric">
-                <h3>Signal Configuration</h3>
-                <p><strong>MEDIUM (Watch):</strong> {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100</p>
-                <p><strong>STRONG (Entry):</strong> {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100</p>
-                <p><strong>VERY STRONG:</strong> {HIGH_STRENGTH}+/100</p>
-                <p><strong>Timeframes:</strong> {INTERVAL} (Primary), {CONFIRM_TF} (Confirmation)</p>
-            </div>
-            
-            <div class="metric">
-                <h3>Data Status</h3>
-                <p><strong>4H Candles:</strong> {h4_count} (Need: 210)</p>
-                <p><strong>30M Candles:</strong> {m30_count} (Need: 50)</p>
-                <p><strong>Signal History:</strong> {len(state.signals_history)} records</p>
-            </div>
-            
-            <div class="metric">
-                <h3>Recent Signals</h3>
-                <p><span style="color:green">●</span> STRONG | <span style="color:orange">●</span> MEDIUM</p>
-                {signals_html if signals_html else "<p>No signals yet</p>"}
-            </div>
-            
-            <div class="metric">
-                <h3>Signal Strength Weights</h3>
-                <p>Trend: {WEIGHTS['trend']}% | Momentum: {WEIGHTS['momentum']}% | Volume: {WEIGHTS['volume']}%</p>
-                <p>Structure: {WEIGHTS['structure']}% | Multi-TF: {WEIGHTS['multi_tf']}%</p>
-            </div>
-            
-            <hr>
-            <p>
-                <a href="/health">Health Check</a> | 
-                <a href="/stats">Detailed Stats</a> |
-                <a href="/config">Configuration</a>
-            </p>
-            <p><small>Last update: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</small></p>
+            <script>
+                // عداد التحديث التلقائي
+                let countdown = 60;
+                setInterval(function() {{
+                    countdown--;
+                    document.getElementById('countdown').textContent = countdown;
+                    if (countdown <= 0) {{
+                        refreshData();
+                    }}
+                }}, 1000);
+            </script>
         </body>
     </html>
     """
