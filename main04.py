@@ -26,6 +26,16 @@ import base64
 #                 CONFIGURATION
 # ────────────────────────────────────────────────
 
+# Simple health check endpoint - يجب أن يكون أول @app.route
+@app.route('/health')
+def simple_health():
+    return "OK", 200
+
+@app.route('/')
+def dashboard():
+    """Main dashboard"""
+    return generate_dashboard_html()
+
 API_KEY    = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
 NTFY_URL   = os.getenv("NTFY_TOPIC", "https://ntfy.sh/your-secret-topic-name")
@@ -1832,59 +1842,34 @@ if __name__ == "__main__":
         f"- MEDIUM (Watch): {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100\n"
         f"- STRONG (Entry): {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100\n"
         f"- VERY STRONG: {HIGH_STRENGTH}+/100\n\n"
-        "Weights:\n"
-        f"- Trend: {WEIGHTS['trend']}%\n"
-        f"- Momentum: {WEIGHTS['momentum']}%\n"
-        f"- Volume: {WEIGHTS['volume']}%\n"
-        f"- Structure: {WEIGHTS['structure']}%\n"
-        f"- Multi-TF: {WEIGHTS['multi_tf']}%\n\n"
-        f"Dashboard: https://test-n998.onrender.com\n"
-        f"Health Check: https://test-n998.onrender.com/ping\n"
         f"Time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
     )
     
     send_ntfy(startup_msg, "Multi-Crypto Bot Started", "high")
     
-    # Start WebSocket thread
-    def run_async():
-        asyncio.run(run_websockets())
-    
-    ws_thread = threading.Thread(target=run_async, daemon=True)
-    ws_thread.start()
-    
-    # Give WebSocket time to initialize
-    print(f"\n{'='*80}")
-    print(f"Initializing WebSocket connection...")
-    print(f"Waiting 3 seconds before starting Flask server...")
-    print(f"{'='*80}")
-    time.sleep(3)
-    
-    # Start Flask server
+    # ✅ الأهم: ابدأ Flask أولاً ثم WebSocket في الخلفية
     port = int(os.environ.get("PORT", 10000))
     
     print(f"\n{'='*80}")
-    print(f"MULTI-CRYPTO 3-LEVEL SIGNAL STRENGTH TRADING BOT")
+    print(f"🔥 STARTING FLASK SERVER ON PORT {port} FIRST...")
     print(f"{'='*80}")
-    print(f"Monitored Symbols ({len(SYMBOLS)}): {', '.join(SYMBOLS)}")
-    print(f"Timeframes: {INTERVAL} (Primary), {CONFIRM_TF} (Confirmation)")
-    print(f"\nSIGNAL LEVELS:")
-    print(f"  - MEDIUM (Watch): {MEDIUM_THRESHOLD}-{SIGNAL_THRESHOLD-1}/100")
-    print(f"  - STRONG (Entry): {SIGNAL_THRESHOLD}-{HIGH_STRENGTH-1}/100")
-    print(f"  - VERY STRONG: {HIGH_STRENGTH}+/100")
-    print(f"\nWeights: Trend({WEIGHTS['trend']}%) | Momentum({WEIGHTS['momentum']}%)")
-    print(f"         Volume({WEIGHTS['volume']}%) | Structure({WEIGHTS['structure']}%)")
-    print(f"         Multi-TF({WEIGHTS['multi_tf']}%)")
-    print(f"\nWeb Dashboard: http://0.0.0.0:{port}")
-    print(f"External URL: https://test-n998.onrender.com")
-    print(f"Health Check: https://test-n998.onrender.com/ping")
-    print(f"API Endpoints:")
-    print(f"  - /api/health       - Health check")
-    print(f"  - /api/symbols      - All symbols data")
-    print(f"  - /api/signals/recent - Recent signals")
-    print(f"  - /api/performance  - Performance stats")
-    print(f"  - /config          - Configuration")
-    print(f"{'='*80}")
-    print(f"Starting Flask server on port {port}...")
-    print(f"Collecting market data and calculating signal strengths...\n")
+    
+    # ابدأ WebSocket في thread منفصل
+    def start_websocket():
+        time.sleep(5)  # انتظر حتى يبدأ Flask أولاً
+        print(f"\n{'='*80}")
+        print(f"🌐 STARTING WEBSOCKET CONNECTION...")
+        print(f"{'='*80}")
+        asyncio.run(run_websockets())
+    
+    ws_thread = threading.Thread(target=start_websocket, daemon=True)
+    ws_thread.start()
+    
+    # ✅ ابدأ Flask الآن - هذا ما يهم Render
+    print(f"\n✅ Flask is ready on port {port}")
+    print(f"✅ Health check: http://0.0.0.0:{port}/ping")
+    print(f"✅ Dashboard: http://0.0.0.0:{port}/")
+    print(f"✅ Render URL: https://test-n998.onrender.com")
+    print(f"\n{'='*80}")
     
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
