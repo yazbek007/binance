@@ -1862,5 +1862,5 @@ if __name__ == "__main__":
     print(f"  - /config          - Configuration")
     print(f"{'='*80}")
     print(f"Collecting market data and calculating signal strengths...\n")
-    
+    port = int(os.environ.get("PORT", 10000))  # استخدم PORT من Render أو 10000 كبديل
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
