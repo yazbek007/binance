@@ -1,18 +1,4 @@
-# requirements.txt content (ضعه في ملف منفصل بنفس المجلد)
-"""
-ccxt==4.3.1
-pandas==2.2.2
-numpy==2.0.0
-flask==3.0.3
-gunicorn==23.0.0
-python-dotenv==1.0.1
-"""
 
-# .env content (لا تضعه في GitHub – استخدم Environment Variables في Render)
-"""
-BINANCE_TESTNET_API_KEY=your_testnet_api_key_here
-BINANCE_TESTNET_SECRET=your_testnet_secret_here
-"""
 
 # main.py
 import os
