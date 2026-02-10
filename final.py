@@ -127,22 +127,46 @@ class DataManager:
         self.setup_exchange()
         
     def setup_exchange(self):
-        """إعداد اتصال بالتبادل"""
+        """إعداد اتصال بالتبادل مع معالجة أفضل للأخطاء"""
         try:
-            if TRADING_MODE in [TradingMode.PAPER, TradingMode.LIVE]:
-                self.exchange = ccxt.binance({
-                    'apiKey': os.getenv('BINANCE_TESTNET_API_KEY'),
-                    'secret': os.getenv('BINANCE_TESTNET_SECRET'),
-                    'enableRateLimit': True,
-                    'options': {
-                        'defaultType': 'future',
-                        'test': True,
-                    }
-                })
-                logger.info(f"✅ تم الاتصال بـ Binance Futures Testnet (وضع: {TRADING_MODE})")
+            api_key = os.getenv('BINANCE_TESTNET_API_KEY', '').strip()
+            secret_key = os.getenv('BINANCE_TESTNET_SECRET', '').strip()
+        
+            if not api_key or not secret_key:
+                logger.error("❌ مفاتيح API غير موجودة في ملف .env")
+                logger.info("📝 يرجى اتباع الخطوات التالية:")
+                logger.info("1. انتقل إلى https://testnet.binancefuture.com")
+                logger.info("2. سجل الدخول أو أنشئ حساب")
+                logger.info("3. اذهب إلى Profile → API Management")
+                logger.info("4. أنشئ API جديد واحصل على المفاتيح")
+                logger.info("5. أضف المفاتيح إلى ملف .env")
+                return None
+        
+            self.exchange = ccxt.binance({
+                'apiKey': api_key,
+                'secret': secret_key,
+                'enableRateLimit': True,
+                'options': {
+                    'defaultType': 'future',
+                    'test': True,
+                }
+            })
+        
+            # اختبار الاتصال
+            self.exchange.fetch_balance()
+            logger.info(f"✅ تم الاتصال بـ Binance Futures Testnet بنجاح")
+            logger.info(f"📊 وضع التشغيل: {TRADING_MODE.upper()}")
+        
+            return self.exchange
+        
+        except ccxt.AuthenticationError as e:
+            logger.error(f"❌ خطأ في المصادقة: {e}")
+            logger.error("الرجاء التحقق من صحة مفاتيح API")
+            return None
         except Exception as e:
             logger.error(f"❌ خطأ في الاتصال: {e}")
-            
+            return None
+        
     def fetch_historical_data(self, symbol: str, days: int = 30) -> pd.DataFrame:
         """جلب بيانات تاريخية للـ Backtesting"""
         try:
