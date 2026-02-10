@@ -1,7 +1,6 @@
-python-binance==1.0.20
+ccxt==4.3.1
+pandas==2.2.2
+numpy==2.0.0
 flask==3.0.3
-requests==2.32.3
-pandas==2.2.3
-numpy>=1.26.0,<2
-matplotlib>=3.8.2
-gunicorn==21.2.0
+gunicorn==23.0.0
+python-dotenv==1.0.1
