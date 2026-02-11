@@ -6,4 +6,10 @@ gunicorn==23.0.0
 python-dotenv==1.0.1
 
 plotly>=5.14.0
-scipy>=1.10.0  # لحساب Sharpe Ratio
+scipy>=1.10.0  
+
+# requirements.txt
+
+requests==2.32.3
+matplotlib==3.9.2
+seaborn==0.13.2
