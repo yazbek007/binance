@@ -119,7 +119,7 @@ class AppConfig:
                                 key=lambda x: x[1]['quoteVolume'] or 0, 
                                 reverse=True)
             coins = []
-            EXCLUDED_COINS = ['LUNA', 'UST', 'FTT', 'TERRA','USD1']
+            EXCLUDED_COINS = ['LUNA', 'UST', 'FTT', 'TERRA','USD1','USDC']
             for symbol, ticker in sorted_pairs[:limit]:
                 base = symbol.replace('/USDT', '')
                 if base not in EXCLUDED_COINS:
