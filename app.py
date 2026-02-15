@@ -1,6 +1,6 @@
 """
-Crypto Signal Analyzer Bot - Smart SELL Edition (High Sensitivity)
-Version 3.5.2-sell - Detects sell signals with advanced bearish logic
+Crypto Signal Analyzer Bot - Enhanced SELL Edition (High Sensitivity)
+Version 4.0.0-sell - Specialized in sell signals only, improved bearish logic
 All notifications in English, no emojis.
 """
 
@@ -54,6 +54,8 @@ class IndicatorType(Enum):
     # إضافات جديدة لتحسين حساسية البيع
     BEARISH_DIVERGENCE = "bearish_divergence"
     OVERBOUGHT = "overbought"
+    BEARISH_CANDLE = "bearish_candle"       # أنماط شموع هابطة
+    SUPPLY_ZONE = "supply_zone"              # مناطق عرض (مقاومة قوية)
 
 @dataclass
 class CoinConfig:
@@ -66,7 +68,7 @@ class CoinConfig:
 @dataclass
 class IndicatorScore:
     name: str
-    raw_score: float      # 0 to 1, where 1 means strong bearish signal (for sell-focused bot)
+    raw_score: float      # 0 to 1, where 1 means strong bearish signal
     weighted_score: float
     percentage: float      # raw_score * 100
     weight: float
@@ -108,7 +110,7 @@ class Notification:
 # ======================
 class AppConfig:
     @staticmethod
-    def get_top_coins(limit=10):
+    def get_top_coins(limit=15):
         """جلب أفضل العملات من حيث حجم التداول"""
         try:
             exchange = ccxt.binance()
@@ -119,7 +121,7 @@ class AppConfig:
                                 key=lambda x: x[1]['quoteVolume'] or 0, 
                                 reverse=True)
             coins = []
-            EXCLUDED_COINS = ['LUNA', 'UST', 'FTT', 'TERRA','USD1','USDC']
+            EXCLUDED_COINS = ['LUNA', 'UST', 'FTT', 'TERRA', 'USD1', 'USDC']
             for symbol, ticker in sorted_pairs[:limit]:
                 base = symbol.replace('/USDT', '')
                 if base not in EXCLUDED_COINS:
@@ -155,7 +157,7 @@ class AppConfig:
 
     COINS = get_top_coins(15)
 
-    # أوزان معدلة لصالح مؤشرات البيع (زِيدت أوزان المؤشرات الهابطة)
+    # أوزان معدلة لصالح مؤشرات البيع (زيادة وزن المؤشرات الهابطة)
     INDICATOR_WEIGHTS = {
         IndicatorType.TREND.value: 0.20,
         IndicatorType.MOMENTUM.value: 0.20,
@@ -163,15 +165,17 @@ class AppConfig:
         IndicatorType.VOLATILITY.value: 0.10,
         IndicatorType.SENTIMENT.value: 0.10,
         IndicatorType.STRUCTURE.value: 0.10,
-        IndicatorType.SUPPORT_RESISTANCE.value: 0.10,
-        IndicatorType.BEARISH_DIVERGENCE.value: 0.05,   # مؤشر جديد
-        IndicatorType.OVERBOUGHT.value: 0.05            # مؤشر جديد
+        IndicatorType.SUPPORT_RESISTANCE.value: 0.05,
+        IndicatorType.BEARISH_DIVERGENCE.value: 0.05,
+        IndicatorType.OVERBOUGHT.value: 0.03,
+        IndicatorType.BEARISH_CANDLE.value: 0.02,
+        IndicatorType.SUPPLY_ZONE.value: 0.00  # سيتم إضافته لاحقاً
     }
 
     # عتبات الإشارة (تم تعديلها لجعل البيع أكثر حساسية)
     SIGNAL_THRESHOLDS = {
-        SignalType.STRONG_SELL: 70,    # كانت 30 سابقاً، الآن أي نسبة أعلى من 70 تعتبر بيع قوي
-        SignalType.SELL: 60,
+        SignalType.STRONG_SELL: 65,    # كانت 70، خفضناها قليلاً
+        SignalType.SELL: 55,
         SignalType.NEUTRAL: 40,
         SignalType.BUY: 30,
         SignalType.STRONG_BUY: 20
@@ -180,9 +184,9 @@ class AppConfig:
     UPDATE_INTERVAL = 120  # 2 minutes
     MAX_CANDLES = 200
 
-    # ألوان المؤشرات (تم تعديل بعضها لتعكس الاتجاه البيعي)
+    # ألوان المؤشرات
     INDICATOR_COLORS = {
-        IndicatorType.TREND.value: '#E63946',        # أحمر للاتجاه الهابط
+        IndicatorType.TREND.value: '#E63946',
         IndicatorType.MOMENTUM.value: '#F4A261',
         IndicatorType.VOLUME.value: '#3BB273',
         IndicatorType.VOLATILITY.value: '#F18F01',
@@ -190,31 +194,37 @@ class AppConfig:
         IndicatorType.STRUCTURE.value: '#8F2D56',
         IndicatorType.SUPPORT_RESISTANCE.value: '#6A4C93',
         IndicatorType.BEARISH_DIVERGENCE.value: '#B23B3B',
-        IndicatorType.OVERBOUGHT.value: '#D94F4F'
+        IndicatorType.OVERBOUGHT.value: '#D94F4F',
+        IndicatorType.BEARISH_CANDLE.value: '#C44545',
+        IndicatorType.SUPPLY_ZONE.value: '#A53333'
     }
 
     INDICATOR_DISPLAY_NAMES = {
-        IndicatorType.TREND.value: 'Bearish Trend',
-        IndicatorType.MOMENTUM.value: 'Bearish Momentum',
+        IndicatorType.TREND.value: 'Bearish Trend (EMAs)',
+        IndicatorType.MOMENTUM.value: 'Bearish Momentum (RSI/MACD)',
         IndicatorType.VOLUME.value: 'Selling Volume',
-        IndicatorType.VOLATILITY.value: 'Volatility (high risk)',
-        IndicatorType.SENTIMENT.value: 'Market Sentiment (greed)',
-        IndicatorType.STRUCTURE.value: 'Price Structure (tops)',
-        IndicatorType.SUPPORT_RESISTANCE.value: 'Resistance nearby',
+        IndicatorType.VOLATILITY.value: 'Volatility (Upper Band)',
+        IndicatorType.SENTIMENT.value: 'Market Sentiment (Greed)',
+        IndicatorType.STRUCTURE.value: 'Price Structure (Tops)',
+        IndicatorType.SUPPORT_RESISTANCE.value: 'Resistance Nearby',
         IndicatorType.BEARISH_DIVERGENCE.value: 'Bearish Divergence',
-        IndicatorType.OVERBOUGHT.value: 'Overbought Condition'
+        IndicatorType.OVERBOUGHT.value: 'Overbought Condition',
+        IndicatorType.BEARISH_CANDLE.value: 'Bearish Candles',
+        IndicatorType.SUPPLY_ZONE.value: 'Supply Zone'
     }
 
     INDICATOR_DESCRIPTIONS = {
-        IndicatorType.TREND.value: 'Price below key moving averages → strong sell signal',
-        IndicatorType.MOMENTUM.value: 'RSI overbought or falling momentum → sell',
+        IndicatorType.TREND.value: 'Price below key EMAs → strong downtrend',
+        IndicatorType.MOMENTUM.value: 'RSI > 70 or MACD bearish cross → selling pressure',
         IndicatorType.VOLUME.value: 'High volume on red candles → distribution',
-        IndicatorType.VOLATILITY.value: 'High volatility often precedes sharp drops',
-        IndicatorType.SENTIMENT.value: 'Extreme greed (F&G > 80) signals potential top',
-        IndicatorType.STRUCTURE.value: 'Price near recent highs, forming double tops',
-        IndicatorType.SUPPORT_RESISTANCE.value: 'Price approaching strong resistance',
-        IndicatorType.BEARISH_DIVERGENCE.value: 'Price makes higher high but RSI lower → reversal',
-        IndicatorType.OVERBOUGHT.value: 'RSI > 70 or Bollinger upper band touch'
+        IndicatorType.VOLATILITY.value: 'Price near upper Bollinger Band → reversal likely',
+        IndicatorType.SENTIMENT.value: 'Extreme greed (F&G > 75) signals potential top',
+        IndicatorType.STRUCTURE.value: 'Double top or lower highs → bearish structure',
+        IndicatorType.SUPPORT_RESISTANCE.value: 'Price approaching strong resistance level',
+        IndicatorType.BEARISH_DIVERGENCE.value: 'Higher price but lower RSI → reversal imminent',
+        IndicatorType.OVERBOUGHT.value: 'RSI > 75 or price above upper band → overextended',
+        IndicatorType.BEARISH_CANDLE.value: 'Shooting star, bearish engulfing, evening star',
+        IndicatorType.SUPPLY_ZONE.value: 'Multiple touches of resistance → supply zone'
     }
 
 # ======================
@@ -223,14 +233,14 @@ class AppConfig:
 class ExternalAPIConfig:
     BINANCE_API_KEY = os.environ.get('BINANCE_API_KEY', '')
     BINANCE_SECRET_KEY = os.environ.get('BINANCE_SECRET_KEY', '')
-    NTFY_TOPIC = os.environ.get('NTFY_TOPIC_SELL', 'crypto_sell_alerts')  # topic مختلف
+    NTFY_TOPIC = os.environ.get('NTFY_TOPIC_SELL', 'crypto_sell_alerts')
     NTFY_URL = f"https://ntfy.sh/{NTFY_TOPIC}"
     FGI_API_URL = "https://api.alternative.me/fng/"
     REQUEST_TIMEOUT = 10
     MAX_RETRIES = 2
 
 # ======================
-# Binance Client (نفس الكود السابق)
+# Binance Client
 # ======================
 class BinanceClient:
     def __init__(self):
@@ -271,7 +281,7 @@ class BinanceClient:
         return ticker['last'] if ticker else 0.0
 
 # ======================
-# Fear & Greed Fetcher (مع تعديل لتفسير الجشع كإشارة بيع)
+# Fear & Greed Fetcher (تفسير الجشع كإشارة بيع)
 # ======================
 class FearGreedFetcher:
     def __init__(self):
@@ -299,20 +309,23 @@ class FearGreedFetcher:
         return self._to_bearish_score(self.last_value), self.last_value
 
     def _to_bearish_score(self, value: int) -> float:
-        # كلما زاد الخوف، قلت إشارة البيع (لأن الخوف قد يعني قاع)
-        # كلما زاد الجشع، زادت إشارة البيع (تصحيح مرتقب)
+        # كلما زاد الجشع، زادت إشارة البيع
         if value >= 80:
             return 0.95   # جشع شديد → بيع قوي
+        if value >= 70:
+            return 0.85
         if value >= 60:
-            return 0.75
+            return 0.70
+        if value >= 50:
+            return 0.50
         if value >= 40:
-            return 0.50   # محايد
-        if value >= 20:
             return 0.30
-        return 0.10       # خوف شديد → لا توجد إشارة بيع
+        if value >= 25:
+            return 0.20
+        return 0.10       # خوف شديد
 
 # ======================
-# Indicator Calculators (معدلة لتعطي درجات عالية عندما يكون السيناريو هابطاً)
+# Indicator Calculators (محسنة للبيع)
 # ======================
 class IndicatorCalculator:
     @staticmethod
@@ -359,228 +372,375 @@ class IndicatorCalculator:
                 avg_loss = (avg_loss * (period - 1) + losses[i]) / period
         return rsi_values
 
-    # ===== مؤشرات الاتجاه الهابط =====
+    @staticmethod
+    def macd(prices: List[float], fast=12, slow=26, signal=9) -> Dict:
+        if len(prices) < slow + signal:
+            return {'histogram': 0, 'signal': 0, 'macd': 0, 'prev_hist': 0}
+        ema_fast = IndicatorCalculator.ema(prices, fast)
+        ema_slow = IndicatorCalculator.ema(prices, slow)
+        macd_line = [f - s for f, s in zip(ema_fast, ema_slow)]
+        signal_line = IndicatorCalculator.ema(macd_line, signal)
+        histogram = macd_line[-1] - signal_line[-1]
+        prev_hist = macd_line[-2] - signal_line[-2] if len(macd_line) > 1 else 0
+        return {
+            'histogram': histogram,
+            'signal': signal_line[-1],
+            'macd': macd_line[-1],
+            'prev_hist': prev_hist
+        }
+
+    # ===== مؤشرات البيع المحسنة =====
+
     @staticmethod
     def bearish_trend_strength(close_prices: List[float]) -> float:
-        """كلما كان السعر أقل من المتوسطات، كلما زادت الدرجة (إشارة بيع قوية)."""
-        if len(close_prices) < 30:
+        """تقييم قوة الاتجاه الهابط باستخدام EMAs متعددة"""
+        if len(close_prices) < 50:
             return 0.5
-        sma_20 = IndicatorCalculator.sma(close_prices, 20)[-1]
-        sma_50 = IndicatorCalculator.sma(close_prices, 50)[-1]
-        sma_100 = IndicatorCalculator.sma(close_prices, 100)[-1]
-        if None in (sma_20, sma_50, sma_100):
+        try:
+            ema_9 = IndicatorCalculator.ema(close_prices, 9)[-1]
+            ema_21 = IndicatorCalculator.ema(close_prices, 21)[-1]
+            ema_50 = IndicatorCalculator.ema(close_prices, 50)[-1]
+            ema_200 = IndicatorCalculator.ema(close_prices, 200)[-1] if len(close_prices) >= 200 else None
+
+            current = close_prices[-1]
+            score = 0.0
+
+            # السعر تحت المتوسطات يعطي نقاط بيع
+            if current < ema_9: score += 0.2
+            if current < ema_21: score += 0.2
+            if current < ema_50: score += 0.2
+            if ema_200 and current < ema_200: score += 0.2
+
+            # ترتيب المتوسطات هابط (9 < 21 < 50)
+            if ema_9 < ema_21 < ema_50:
+                score += 0.3
+            elif ema_9 > ema_21 > ema_50:
+                score -= 0.2  # ترتيب صاعد يقلل من قوة البيع
+
+            # المسافة تحت المتوسطات
+            dist_below_ema9 = (ema_9 - current) / current if current > 0 else 0
+            if dist_below_ema9 > 0.03:
+                score += 0.1
+
+            return max(0.0, min(1.0, (score + 1) / 2.5))
+        except Exception as e:
+            logger.error(f"Error in bearish_trend_strength: {e}")
             return 0.5
-
-        current = close_prices[-1]
-        score = 0.0
-        if current < sma_20:
-            score += 0.4
-        if current < sma_50:
-            score += 0.3
-        if current < sma_100:
-            score += 0.3
-        if sma_20 < sma_50 < sma_100:
-            score += 0.3   # ترتيب هابط
-        elif sma_20 > sma_50 > sma_100:
-            score -= 0.2   # ترتيب صاعد
-
-        return max(0.0, min(1.0, (score + 1) / 2))
 
     @staticmethod
     def bearish_momentum(close_prices: List[float]) -> float:
-        """RSI فوق 70 يعطي درجة عالية (بيع)، وأسفل 30 يعطي درجة منخفضة."""
-        if len(close_prices) < 20:
+        """دمج RSI و MACD و ROC لقياس الزخم الهابط"""
+        if len(close_prices) < 30:
             return 0.5
+        try:
+            # RSI: أعلى من 70 يعطي قوة بيع
+            rsi_vals = IndicatorCalculator.rsi(close_prices, 14)
+            last_rsi = rsi_vals[-1] if rsi_vals[-1] is not None else 50
+            if last_rsi > 80:
+                rsi_score = 0.95
+            elif last_rsi > 70:
+                rsi_score = 0.85
+            elif last_rsi > 60:
+                rsi_score = 0.65
+            elif last_rsi > 50:
+                rsi_score = 0.45
+            elif last_rsi > 40:
+                rsi_score = 0.30
+            else:
+                rsi_score = 0.15
 
-        rsi_vals = IndicatorCalculator.rsi(close_prices, 14)
-        last_rsi = rsi_vals[-1] if rsi_vals[-1] is not None else 50
+            # MACD: هيستوجرام سلبي وباتجاه سلبي
+            macd_data = IndicatorCalculator.macd(close_prices)
+            hist = macd_data['histogram']
+            if hist < 0 and hist < macd_data.get('prev_hist', 0):
+                macd_score = 0.9   # زخم هابط متزايد
+            elif hist < 0:
+                macd_score = 0.7
+            elif hist > 0 and hist > macd_data.get('prev_hist', 0):
+                macd_score = 0.3   # زخم صاعد
+            else:
+                macd_score = 0.5
 
-        if last_rsi > 70:
-            rsi_score = 0.9
-        elif last_rsi > 60:
-            rsi_score = 0.7
-        elif last_rsi > 50:
-            rsi_score = 0.5
-        elif last_rsi > 30:
-            rsi_score = 0.3
-        else:
-            rsi_score = 0.1
+            # ROC (معدل التغير) سلبي
+            roc_14 = (close_prices[-1] - close_prices[-14]) / close_prices[-14] * 100
+            if roc_14 < -3:
+                roc_score = 0.9
+            elif roc_14 < -1:
+                roc_score = 0.7
+            elif roc_14 < 0:
+                roc_score = 0.6
+            elif roc_14 < 2:
+                roc_score = 0.4
+            else:
+                roc_score = 0.2
 
-        # Rate of change سلبي يعطي قوة بيع
-        roc_14 = (close_prices[-1] - close_prices[-14]) / close_prices[-14] * 100
-        if roc_14 < -2:
-            roc_score = 0.8
-        elif roc_14 < 0:
-            roc_score = 0.6
-        elif roc_14 < 2:
-            roc_score = 0.4
-        else:
-            roc_score = 0.2
-
-        return rsi_score * 0.6 + roc_score * 0.4
+            return rsi_score * 0.5 + macd_score * 0.3 + roc_score * 0.2
+        except Exception as e:
+            logger.error(f"Error in bearish_momentum: {e}")
+            return 0.5
 
     @staticmethod
     def selling_volume(volumes: List[float], close_prices: List[float]) -> float:
-        """تحليل الحجم: حجم مرتفع مع شموع حمراء → بيع."""
+        """تحليل حجم البيع: حجم مرتفع على الشموع الحمراء"""
         if len(volumes) < 20:
             return 0.5
-        current_vol = volumes[-1]
-        avg_vol = sum(volumes[-20:]) / 20
-        ratio = current_vol / avg_vol if avg_vol > 0 else 1.0
+        try:
+            current_vol = volumes[-1]
+            avg_vol = sum(volumes[-20:]) / 20
+            ratio = current_vol / avg_vol if avg_vol > 0 else 1.0
 
-        # حجم أعلى من المتوسط
-        if ratio > 2.0:
-            vol_score = 0.8
-        elif ratio > 1.5:
-            vol_score = 0.7
-        elif ratio > 1.0:
-            vol_score = 0.6
-        elif ratio > 0.7:
-            vol_score = 0.5
-        else:
-            vol_score = 0.4
+            # حجم مرتفع
+            if ratio > 2.0:
+                vol_score = 0.85
+            elif ratio > 1.5:
+                vol_score = 0.75
+            elif ratio > 1.2:
+                vol_score = 0.65
+            elif ratio > 1.0:
+                vol_score = 0.55
+            elif ratio > 0.8:
+                vol_score = 0.45
+            else:
+                vol_score = 0.35
 
-        # التحقق من لون الشمعة: إذا كانت حمراء (close < open) أو انخفاض السعر
-        price_change = (close_prices[-1] - close_prices[-2]) / close_prices[-2]
-        if price_change < -0.01 and vol_score > 0.6:
-            vol_score += 0.2   # حجم مرتفع مع انخفاض → ضغط بيع
-        elif price_change > 0.01 and vol_score > 0.6:
-            vol_score -= 0.1   # حجم مرتفع مع ارتفاع → قد يكون شراء
+            # التحقق من لون الشمعة: إذا كانت حمراء (close < open) نعزز
+            # نستخدم close[-1] < close[-2] كتقريب
+            price_change = (close_prices[-1] - close_prices[-2]) / close_prices[-2]
+            if price_change < -0.01 and vol_score > 0.6:
+                vol_score += 0.2   # انخفاض بحجم كبير
+            elif price_change < -0.005 and vol_score > 0.5:
+                vol_score += 0.1
+            elif price_change > 0.01 and vol_score > 0.6:
+                vol_score -= 0.1   # ارتفاع بحجم كبير (قد يكون شراء)
 
-        return max(0.0, min(1.0, vol_score))
+            # تراكم أحجام بيع (حجم متزايد مع انخفاض)
+            if len(volumes) >= 4 and volumes[-1] > volumes[-2] > volumes[-3] and price_change < -0.005:
+                vol_score += 0.1
+
+            return max(0.0, min(1.0, vol_score))
+        except Exception as e:
+            logger.error(f"Error in selling_volume: {e}")
+            return 0.5
 
     @staticmethod
     def bearish_volatility(high: List[float], low: List[float], close: List[float]) -> float:
-        """تقلبات عالية غالباً تسبق هبوط، خاصة إذا كان السعر قرب الحد العلوي لبولينجر."""
+        """تقييم التقلب: التركيز على القرب من الحد العلوي لبولينجر"""
         if len(close) < 20:
             return 0.5
-        sma_20 = IndicatorCalculator.sma(close, 20)[-1]
-        std_dev = 0
-        for i in range(-20, 0):
-            std_dev += (close[i] - sma_20) ** 2
-        std_dev = math.sqrt(std_dev / 20)
-        upper = sma_20 + 2 * std_dev
-        lower = sma_20 - 2 * std_dev
-        if upper == lower:
-            return 0.5
-
-        position = (close[-1] - lower) / (upper - lower)
-        # إذا كان السعر قرب الحد العلوي → احتمالية ارتداد هابط
-        if position > 0.9:
-            return 0.9
-        if position > 0.8:
-            return 0.7
-        if position < 0.2:
-            return 0.2   # قرب القاع قد يكون دعم
-        return 0.5
-
-    @staticmethod
-    def bearish_structure(high: List[float], low: List[float], close: List[float]) -> float:
-        """تحديد القمم المحلية: إذا كان السعر قرب قمة حديثة، إشارة بيع."""
-        if len(high) < 30:
-            return 0.5
-        recent_high = max(high[-30:])
-        recent_low = min(low[-30:])
-        if recent_high == recent_low:
-            return 0.5
-        position = (close[-1] - recent_low) / (recent_high - recent_low)
-        if position > 0.9:
-            return 0.9
-        if position > 0.8:
-            return 0.7
-        if position < 0.2:
-            return 0.2
-        return 0.5
-
-    @staticmethod
-    def resistance_levels(high: List[float], low: List[float], close: List[float]) -> float:
-        """تحديد مستويات مقاومة قريبة."""
-        if len(high) < 40:
-            return 0.5
-        highs = high[-40:]
-        lows = low[-40:]
-        resistance_candidates = []
-
-        for i in range(2, len(highs) - 2):
-            if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
-                resistance_candidates.append(highs[i])
-
-        if not resistance_candidates:
-            return 0.5
-
-        current = close[-1]
-        closest_resistance = min([r for r in resistance_candidates if r > current], default=None)
-
-        if closest_resistance:
-            distance = (closest_resistance - current) / current
-            if distance < 0.02:
-                return 0.9   # مقاومة قوية جداً قريبة
-            if distance < 0.05:
-                return 0.7
-            if distance < 0.10:
-                return 0.5
-        return 0.3
-
-    @staticmethod
-    def bearish_divergence(high: List[float], close: List[float]) -> float:
-        """ divergence هابط: سعر يصنع قمة أعلى و RSI يصنع قمة أقل."""
-        if len(high) < 30 or len(close) < 30:
-            return 0.5
-        rsi_vals = IndicatorCalculator.rsi(close, 14)
-        # آخر 14 شمعة
-        recent_highs = high[-14:]
-        recent_rsi = [r for r in rsi_vals[-14:] if r is not None]
-        if len(recent_rsi) < 10:
-            return 0.5
-
-        # البحث عن قمة سعرية أعلى وقمة RSI أقل
-        price_peak = max(recent_highs)
-        price_peak_idx = recent_highs.index(price_peak)
-        rsi_at_peak = recent_rsi[price_peak_idx] if price_peak_idx < len(recent_rsi) else 50
-
-        # قارن مع القمة السابقة
-        prev_highs = high[-28:-14]
-        if prev_highs:
-            prev_price_peak = max(prev_highs)
-            prev_idx = prev_highs.index(prev_price_peak)
-            prev_rsi_vals = IndicatorCalculator.rsi(close[-28:-14], 14)
-            prev_rsi_peak = prev_rsi_vals[prev_idx] if prev_idx < len(prev_rsi_vals) and prev_rsi_vals[prev_idx] is not None else 50
-
-            if price_peak > prev_price_peak and rsi_at_peak < prev_rsi_peak:
-                return 0.9   # divergence هابط قوي
-        return 0.5
-
-    @staticmethod
-    def overbought_condition(high: List[float], low: List[float], close: List[float]) -> float:
-        """تقييم ظروف ذروة الشراء (RSI > 70 أو السعر فوق Bollinger upper)."""
-        score = 0.0
-        # RSI
-        rsi_vals = IndicatorCalculator.rsi(close, 14)
-        last_rsi = rsi_vals[-1] if rsi_vals[-1] is not None else 50
-        if last_rsi > 80:
-            score += 0.6
-        elif last_rsi > 70:
-            score += 0.4
-        elif last_rsi > 60:
-            score += 0.2
-
-        # Bollinger
-        if len(close) > 20:
+        try:
             sma_20 = IndicatorCalculator.sma(close, 20)[-1]
+            if sma_20 is None:
+                return 0.5
             std_dev = 0
             for i in range(-20, 0):
                 std_dev += (close[i] - sma_20) ** 2
             std_dev = math.sqrt(std_dev / 20)
             upper = sma_20 + 2 * std_dev
-            if close[-1] > upper:
-                score += 0.4
-            elif close[-1] > sma_20 + 1.5 * std_dev:
+            lower = sma_20 - 2 * std_dev
+            if upper == lower:
+                return 0.5
+
+            position = (close[-1] - lower) / (upper - lower)
+            # كلما اقترب من الحد العلوي، زادت فرصة البيع
+            if position > 0.9:
+                return 0.95
+            if position > 0.8:
+                return 0.8
+            if position > 0.7:
+                return 0.6
+            if position < 0.2:
+                return 0.2   # قرب القاع قد يكون دعم
+            return 0.4
+        except Exception as e:
+            logger.error(f"Error in bearish_volatility: {e}")
+            return 0.5
+
+    @staticmethod
+    def bearish_structure(high: List[float], low: List[float], close: List[float]) -> float:
+        """هيكل سعري هابط: قمم أقل، كسر دعوم"""
+        if len(high) < 30:
+            return 0.5
+        try:
+            highs_30 = high[-30:]
+            lows_30 = low[-30:]
+            closes_30 = close[-30:]
+
+            # هل القمة الأخيرة أقل من القمة قبلها؟
+            lower_highs = highs_30[-1] < highs_30[-5] < highs_30[-10]
+            # هل القاع الأخير أقل من القاع قبله؟
+            lower_lows = lows_30[-1] < lows_30[-5] < lows_30[-10]
+
+            # كسر الدعم الأخير
+            support_break = False
+            if len(highs_30) > 10:
+                recent_support = min(lows_30[-10:-5])
+                if closes_30[-1] < recent_support * 0.995:  # كسر الدعم
+                    support_break = True
+
+            score = 0.5
+            if lower_highs and lower_lows:
+                score = 0.9   # هيكل هابط قوي
+            elif lower_highs:
+                score = 0.7
+            elif lower_lows:
+                score = 0.6
+
+            if support_break:
                 score += 0.2
 
-        return min(1.0, score)
+            return min(1.0, score)
+        except Exception as e:
+            logger.error(f"Error in bearish_structure: {e}")
+            return 0.5
+
+    @staticmethod
+    def resistance_levels(high: List[float], low: List[float], close: List[float]) -> float:
+        """تحديد مستويات مقاومة قريبة"""
+        if len(high) < 40:
+            return 0.5
+        try:
+            highs = high[-40:]
+            lows = low[-40:]
+            resistance_candidates = []
+
+            for i in range(2, len(highs) - 2):
+                if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
+                    resistance_candidates.append(highs[i])
+
+            if not resistance_candidates:
+                return 0.5
+
+            current = close[-1]
+            # أقرب مقاومة أعلى من السعر
+            closest_resistance = min([r for r in resistance_candidates if r > current], default=None)
+
+            if closest_resistance:
+                distance = (closest_resistance - current) / current
+                if distance < 0.015:
+                    return 0.95   # مقاومة قريبة جداً
+                if distance < 0.03:
+                    return 0.8
+                if distance < 0.05:
+                    return 0.65
+                if distance < 0.08:
+                    return 0.5
+            return 0.3
+        except Exception as e:
+            logger.error(f"Error in resistance_levels: {e}")
+            return 0.5
+
+    @staticmethod
+    def bearish_divergence(high: List[float], close: List[float]) -> float:
+        """ divergence هابط: قمة سعرية أعلى مع قمة RSI أقل """
+        if len(high) < 30 or len(close) < 30:
+            return 0.5
+        try:
+            rsi_vals = IndicatorCalculator.rsi(close, 14)
+            # آخر 14 فترة
+            recent_highs = high[-14:]
+            recent_rsi = [r for r in rsi_vals[-14:] if r is not None]
+            if len(recent_rsi) < 8:
+                return 0.5
+
+            # قمة السعر الأخيرة
+            price_peak = max(recent_highs)
+            price_peak_idx = recent_highs.index(price_peak)
+            rsi_at_peak = recent_rsi[price_peak_idx] if price_peak_idx < len(recent_rsi) else 50
+
+            # قمة سابقة (14-28 يوم مضت)
+            prev_highs = high[-28:-14]
+            if prev_highs:
+                prev_price_peak = max(prev_highs)
+                prev_idx = prev_highs.index(prev_price_peak)
+                prev_rsi_vals = IndicatorCalculator.rsi(close[-28:-14], 14)
+                prev_rsi_peak = prev_rsi_vals[prev_idx] if prev_idx < len(prev_rsi_vals) and prev_rsi_vals[prev_idx] is not None else 50
+
+                if price_peak > prev_price_peak and rsi_at_peak < prev_rsi_peak:
+                    return 0.95   # divergence هابط قوي
+                if price_peak > prev_price_peak and rsi_at_peak < prev_rsi_peak * 1.05:  # تقريباً متساوٍ
+                    return 0.7
+            return 0.4
+        except Exception as e:
+            logger.error(f"Error in bearish_divergence: {e}")
+            return 0.5
+
+    @staticmethod
+    def overbought_condition(high: List[float], low: List[float], close: List[float]) -> float:
+        """تقييم ظروف ذروة الشراء (RSI, Bollinger)"""
+        score = 0.0
+        try:
+            # RSI
+            rsi_vals = IndicatorCalculator.rsi(close, 14)
+            last_rsi = rsi_vals[-1] if rsi_vals[-1] is not None else 50
+            if last_rsi > 85:
+                score += 0.6
+            elif last_rsi > 75:
+                score += 0.5
+            elif last_rsi > 70:
+                score += 0.4
+            elif last_rsi > 65:
+                score += 0.2
+
+            # Bollinger Bands
+            if len(close) > 20:
+                sma_20 = IndicatorCalculator.sma(close, 20)[-1]
+                if sma_20 is not None:
+                    std_dev = 0
+                    for i in range(-20, 0):
+                        std_dev += (close[i] - sma_20) ** 2
+                    std_dev = math.sqrt(std_dev / 20)
+                    upper = sma_20 + 2 * std_dev
+                    if close[-1] > upper:
+                        score += 0.4
+                    elif close[-1] > sma_20 + 1.5 * std_dev:
+                        score += 0.2
+
+            return min(1.0, score)
+        except Exception as e:
+            logger.error(f"Error in overbought_condition: {e}")
+            return 0.5
+
+    @staticmethod
+    def bearish_candle_pattern(open_prices: List[float], high: List[float], low: List[float], close: List[float]) -> float:
+        """الكشف عن أنماط الشموع الهابطة"""
+        if len(close) < 5:
+            return 0.5
+        try:
+            o1, o2, o3 = open_prices[-1], open_prices[-2], open_prices[-3]
+            h1, h2, h3 = high[-1], high[-2], high[-3]
+            l1, l2, l3 = low[-1], low[-2], low[-3]
+            c1, c2, c3 = close[-1], close[-2], close[-3]
+
+            score = 0.5
+
+            # 1. شهاب (Shooting Star)
+            body1 = abs(c1 - o1)
+            upper_shadow1 = h1 - max(c1, o1)
+            lower_shadow1 = min(c1, o1) - l1
+            if upper_shadow1 > 2 * body1 and lower_shadow1 < 0.2 * body1 and c1 < o1:
+                score += 0.4
+
+            # 2. ابتلاع هابط (Bearish Engulfing)
+            if c2 > o2 and c1 < o1 and c1 < o2 and o1 > c2:
+                score += 0.4
+
+            # 3. نجمة المساء (Evening Star) - ثلاث شموع
+            if c2 > o2 and abs(c2 - o2) > 0.02 * c2:  # شمعة صاعدة كبيرة
+                if abs(c1 - o1) < 0.01 * c1:  # دوجي
+                    if c3 < o3 and c3 < (c2 + o2)/2:  # شمعة هابطة
+                        score += 0.5
+
+            # 4. الغمامة السوداء (Dark Cloud Cover)
+            if c2 > o2 and c1 < o1 and o1 > c2 and c1 < (c2 + o2)/2 and c1 > o2:
+                score += 0.3
+
+            return min(1.0, score)
+        except Exception as e:
+            logger.error(f"Error in bearish_candle_pattern: {e}")
+            return 0.5
 
 # ======================
-# Signal Processor (معدل لحساب درجة البيع)
+# Signal Processor
 # ======================
 class SellSignalProcessor:
     @staticmethod
@@ -652,7 +812,7 @@ class SellSignalProcessor:
         return mapping.get(signal_type, "secondary")
 
 # ======================
-# Notification Manager (نفس الكود مع إشارات بيع)
+# Notification Manager (إرسال إشارات البيع فقط)
 # ======================
 class NotificationManager:
     def __init__(self):
@@ -669,18 +829,16 @@ class NotificationManager:
     def get_recent(self, limit: int = 10) -> List[Notification]:
         return self.history[-limit:] if self.history else []
 
-    def should_send(self, coin_symbol: str, percentage: float) -> bool:
+    def should_send(self, coin_symbol: str, percentage: float, signal_type: SignalType) -> bool:
+        if signal_type not in [SignalType.SELL, SignalType.STRONG_SELL]:
+            return False
+
         now = datetime.now()
         if coin_symbol in self.last_notification_time:
             delta = now - self.last_notification_time[coin_symbol]
             if delta.total_seconds() < self.min_interval:
                 return False
-
-        thresholds = AppConfig.SIGNAL_THRESHOLDS
-        # نرسل فقط إذا كانت إشارة بيع (SELL أو STRONG_SELL)
-        if percentage >= thresholds[SignalType.STRONG_SELL] or percentage >= thresholds[SignalType.SELL]:
-            return True
-        return False
+        return True
 
     def send_ntfy(self, message: str, title: str = "Crypto Sell Signal", priority: str = "4", tags: str = "chart") -> bool:
         try:
@@ -703,14 +861,11 @@ class NotificationManager:
             return False
 
     def create_notification(self, coin_signal: CoinSignal) -> Optional[Notification]:
-        if not self.should_send(coin_signal.symbol, coin_signal.total_percentage):
+        if not self.should_send(coin_signal.symbol, coin_signal.total_percentage, coin_signal.signal_type):
             return None
 
         coin = coin_signal
         signal_type = coin.signal_type
-
-        if signal_type not in [SignalType.SELL, SignalType.STRONG_SELL]:
-            return None
 
         title = f"{signal_type.value} Signal: {coin.name}"
         message = (
@@ -728,7 +883,7 @@ class NotificationManager:
         tags = tags_map.get(signal_type, "loudspeaker")
 
         priority_map = {
-            SignalType.STRONG_SELL: "5",   # أولوية قصوى للبيع القوي
+            SignalType.STRONG_SELL: "5",
             SignalType.SELL: "4"
         }
         priority = priority_map.get(signal_type, "4")
@@ -750,7 +905,7 @@ class NotificationManager:
         return None
 
 # ======================
-# Signal Manager (معدل لاستخدام الدوال الجديدة)
+# Signal Manager
 # ======================
 class SellSignalManager:
     def __init__(self):
@@ -803,6 +958,7 @@ class SellSignalManager:
         if not ohlcv or len(ohlcv) < 50:
             return None
 
+        opens = [c[1] for c in ohlcv]
         closes = [c[4] for c in ohlcv]
         highs = [c[2] for c in ohlcv]
         lows = [c[3] for c in ohlcv]
@@ -818,7 +974,6 @@ class SellSignalManager:
         low_24h = ticker.get('low', 0.0)
         volume_24h = ticker.get('quoteVolume', 0.0)
 
-        # حساب الدرجات (كلها مصممة لتعطي قيم عالية في الحالات الهابطة)
         scores = {
             IndicatorType.TREND.value: IndicatorCalculator.bearish_trend_strength(closes),
             IndicatorType.MOMENTUM.value: IndicatorCalculator.bearish_momentum(closes),
@@ -828,7 +983,9 @@ class SellSignalManager:
             IndicatorType.STRUCTURE.value: IndicatorCalculator.bearish_structure(highs, lows, closes),
             IndicatorType.SUPPORT_RESISTANCE.value: IndicatorCalculator.resistance_levels(highs, lows, closes),
             IndicatorType.BEARISH_DIVERGENCE.value: IndicatorCalculator.bearish_divergence(highs, closes),
-            IndicatorType.OVERBOUGHT.value: IndicatorCalculator.overbought_condition(highs, lows, closes)
+            IndicatorType.OVERBOUGHT.value: IndicatorCalculator.overbought_condition(highs, lows, closes),
+            IndicatorType.BEARISH_CANDLE.value: IndicatorCalculator.bearish_candle_pattern(opens, highs, lows, closes),
+            # IndicatorType.SUPPLY_ZONE.value: 0.0  # يمكن إضافته لاحقاً
         }
 
         result = SellSignalProcessor.calculate_bearish_score(scores)
@@ -869,7 +1026,7 @@ class SellSignalManager:
                 data.append(self._format_coin(signal))
             else:
                 data.append(self._default_coin(coin))
-        data.sort(key=lambda x: x['total_percentage'], reverse=True)  # الأعلى (أكثر بيعاً) أولاً
+        data.sort(key=lambda x: x['total_percentage'], reverse=True)
         return data
 
     def _format_coin(self, s: CoinSignal) -> Dict:
@@ -959,9 +1116,9 @@ class SellSignalManager:
         valid = [c for c in coins if c['is_valid']]
         percentages = [c['total_percentage'] for c in valid]
 
-        strong_sell = sum(1 for c in valid if c['total_percentage'] >= 70)
-        sell = sum(1 for c in valid if 60 <= c['total_percentage'] < 70)
-        neutral = sum(1 for c in valid if 40 < c['total_percentage'] < 60)
+        strong_sell = sum(1 for c in valid if c['total_percentage'] >= 65)
+        sell = sum(1 for c in valid if 55 <= c['total_percentage'] < 65)
+        neutral = sum(1 for c in valid if 40 < c['total_percentage'] < 55)
         buy = sum(1 for c in valid if 20 < c['total_percentage'] <= 40)
         strong_buy = sum(1 for c in valid if c['total_percentage'] <= 20)
 
@@ -1027,7 +1184,7 @@ def utility_processor():
     )
 
 # ======================
-# Routes (نفس المسارات لكن البيانات مختلفة)
+# Routes
 # ======================
 @app.route('/')
 def index():
@@ -1035,7 +1192,7 @@ def index():
     stats = signal_manager.get_stats()
     notifications = signal_manager.notification_manager.get_recent(10)
     return render_template(
-        'index_sell.html',   # قالب خاص بالبيع (يمكن استخدام نفس القالب مع تغيير العناوين)
+        'index_sell.html',
         coins=coins,
         stats=stats,
         notifications=notifications,
@@ -1102,7 +1259,7 @@ def send_startup_notification():
     try:
         msg = (
             f"Crypto SELL Signal Analyzer Started\n"
-            f"Version: 3.5.2-sell (English notifications)\n"
+            f"Version: 4.0.0-sell (Enhanced Edition)\n"
             f"Tracking {len(AppConfig.COINS)} coins\n"
             f"Update interval: {AppConfig.UPDATE_INTERVAL//60} minutes"
         )
@@ -1118,11 +1275,11 @@ threading.Thread(target=delayed_startup, daemon=True).start()
 
 if __name__ == '__main__':
     logger.info("=" * 50)
-    logger.info("🚀 Crypto SELL Signal Analyzer v3.5.2 (High Sensitivity)")
+    logger.info("🚀 Crypto SELL Signal Analyzer v4.0.0 (Enhanced Bearish Edition)")
     logger.info(f"📊 Coins: {len(AppConfig.COINS)}")
     logger.info(f"🔄 Update every {AppConfig.UPDATE_INTERVAL//60} minutes")
     logger.info(f"📢 NTFY: {ExternalAPIConfig.NTFY_URL}")
     logger.info("=" * 50)
 
-    port = int(os.environ.get('PORT', 5001))   # تشغيل على منفذ مختلف
+    port = int(os.environ.get('PORT', 5001))
     app.run(host='0.0.0.0', port=port)
