@@ -1,15 +1,15 @@
-ccxt==4.3.1
-pandas==2.2.2
-numpy==2.0.0
-flask==3.0.3
-gunicorn==23.0.0
-python-dotenv==1.0.1
-
-plotly>=5.14.0
-scipy>=1.10.0  
-
-# requirements.txt
-
+# 📦 متطلبات المشروع المحدثة
+Flask==3.0.3
+pandas==2.2.3
+numpy>=1.26.0,<2
+ccxt==4.2.58
 requests==2.32.3
-matplotlib==3.9.2
-seaborn==0.13.2
+python-dotenv>=1.0.0,<2.0.0
+gunicorn==21.2.0
+setuptools==69.0.3
+wheel==0.42.0
+python-dateutil==2.8.2
+six==1.16.0
+python-binance==1.0.19
+pytz==2024.1
+apscheduler==3.10.4
