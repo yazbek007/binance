@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <title>Crypto SELL Signal Analyzer</title>
+    <!-- Bootstrap 5 + Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&display=swap" rel="stylesheet">
+    <style>
+        * {
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        }
+        body {
+            background: #0f0f1b;
+            color: #e0e0f0;
+            padding-bottom: 2rem;
+        }
+        .navbar-brand {
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, #E63946, #B23B3B);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .glass-card {
+            background: rgba(20, 20, 40, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 24px;
+            box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5);
+        }
+        .stat-card {
+            background: rgba(30, 30, 50, 0.6);
+            border-radius: 20px;
+            padding: 1.2rem 1rem;
+            border: 1px solid rgba(255,255,255,0.03);
+            transition: 0.2s;
+        }
+        .stat-card:hover {
+            background: rgba(40, 40, 60, 0.7);
+            border-color: #E6394640;
+        }
+        .signal-badge {
+            font-weight: 600;
+            padding: 0.4rem 0.9rem;
+            border-radius: 40px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+        .signal-badge.strong-sell { background: #a1302a; color: #ffcec9; }
+        .signal-badge.sell { background: #b6583a; color: #ffe1d0; }
+        .signal-badge.neutral { background: #5a5a70; color: #e0e0ff; }
+        .signal-badge.buy { background: #1a5f9c; color: #c2e5ff; }
+        .signal-badge.strong-buy { background: #0f6e4a; color: #c6ffe0; }
+
+        .progress-indicator {
+            height: 8px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.1);
+            overflow: hidden;
+        }
+        .indicator-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 4px;
+            margin-right: 6px;
+        }
+        .notification-item {
+            background: rgba(255,255,255,0.02);
+            border-radius: 16px;
+            padding: 0.9rem 1rem;
+            border-left: 4px solid;
+            margin-bottom: 0.6rem;
+            font-size: 0.9rem;
+        }
+        .refresh-btn {
+            background: linear-gradient(145deg, #2a2a42, #1a1a2e);
+            border: 1px solid #3f3f60;
+            border-radius: 50px;
+            padding: 0.5rem 1.5rem;
+            font-weight: 500;
+            transition: 0.2s;
+        }
+        .refresh-btn:hover {
+            background: #2f2f55;
+            border-color: #E63946;
+        }
+        .coin-row {
+            cursor: pointer;
+            transition: 0.15s;
+            border-radius: 18px;
+            background: rgba(255,255,255,0.02);
+        }
+        .coin-row:hover {
+            background: rgba(230, 57, 70, 0.1);
+        }
+        .table > :not(caption) > * > * {
+            background: transparent !important;
+            color: inherit;
+            border-bottom-color: rgba(255,255,255,0.05);
+            padding: 1rem 0.5rem;
+        }
+        .table {
+            border-collapse: separate;
+            border-spacing: 0 6px;
+        }
+        .detail-panel {
+            background: rgba(0,0,0,0.3);
+            border-radius: 24px;
+            padding: 1.5rem;
+            border: 1px solid #E6394640;
+        }
+        .text-glow {
+            text-shadow: 0 0 10px #E6394680;
+        }
+        .btn-outline-glow {
+            border: 1px solid #E63946;
+            color: #ffb3b3;
+        }
+        .btn-outline-glow:hover {
+            background: #E6394620;
+            border-color: #ff6b6b;
+        }
+        .mobile-stack {
+            display: flex;
+            flex-direction: column;
+        }
+        @media (max-width: 768px) {
+            .stat-card { padding: 0.8rem; }
+            .container { padding-left: 12px; padding-right: 12px; }
+        }
+        /* loading spinner */
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #ffffff30;
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <!-- Navbar / header -->
+    <nav class="navbar navbar-dark px-3 py-3 mb-4">
+        <div class="container-fluid d-flex justify-content-between align-items-center">
+            <span class="navbar-brand fs-3">
+                <i class="bi bi-arrow-down-circle me-2" style="color: #E63946;"></i>
+                SELL SIGNAL ANALYZER
+            </span>
+            <div>
+                <span class="badge bg-secondary me-2" id="fgi-badge">F&G: --</span>
+                <button class="btn refresh-btn" id="manualRefreshBtn">
+                    <i class="bi bi-arrow-repeat me-2"></i> تحديث
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- بطاقات الإحصائيات السريعة -->
+        <div class="row g-3 mb-4" id="statsRow">
+            <div class="col-6 col-md-3">
+                <div class="stat-card d-flex align-items-center">
+                    <i class="bi bi-currency-bitcoin fs-1 me-3" style="color: #f2a900;"></i>
+                    <div>
+                        <small class="text-secondary">العملات</small>
+                        <h4 class="mb-0" id="stat-total">-</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card d-flex align-items-center">
+                    <i class="bi bi-bar-chart-fill fs-1 me-3" style="color: #E63946;"></i>
+                    <div>
+                        <small class="text-secondary">متوسط البيع</small>
+                        <h4 class="mb-0" id="stat-avg">-</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card d-flex align-items-center">
+                    <i class="bi bi-exclamation-triangle fs-1 me-3" style="color: #f18f01;"></i>
+                    <div>
+                        <small class="text-secondary">بيع قوي</small>
+                        <h4 class="mb-0" id="stat-sell">-</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card d-flex align-items-center">
+                    <i class="bi bi-bell-fill fs-1 me-3" style="color: #a23b72;"></i>
+                    <div>
+                        <small class="text-secondary">إشعارات</small>
+                        <h4 class="mb-0" id="stat-notify">-</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- صف رئيسي: جدول العملات + الإشعارات الجانبية -->
+        <div class="row g-4">
+            <!-- جدول العملات -->
+            <div class="col-lg-8">
+                <div class="glass-card p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0"><i class="bi bi-table me-2"></i> إشارات البيع</h5>
+                        <small class="text-secondary" id="last-update-label">Last update: ...</small>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>العملة</th>
+                                    <th>السعر</th>
+                                    <th>24h</th>
+                                    <th>الإشارة</th>
+                                    <th>قوة البيع</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="coins-table-body">
+                                <!-- سوف يتم ملؤها بالجافاسكريبت -->
+                                <tr><td colspan="6" class="text-center text-secondary">جاري تحميل البيانات...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- لوحة الإشعارات الحديثة -->
+            <div class="col-lg-4">
+                <div class="glass-card p-4 h-100">
+                    <div class="d-flex justify-content-between">
+                        <h5 class="fw-bold"><i class="bi bi-bell me-2"></i> إشعارات البيع</h5>
+                        <span class="badge bg-dark" id="notif-count">0</span>
+                    </div>
+                    <hr class="opacity-25">
+                    <div id="notifications-container" style="max-height: 450px; overflow-y: auto;">
+                        <!-- سيتم ملؤها لاحقاً -->
+                        <p class="text-secondary text-center">لا توجد إشعارات بعد</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- تفاصيل المؤشرات (تظهر عند الضغط على عملة) -->
+        <div class="row mt-4" id="detailPanel" style="display: none;">
+            <div class="col-12">
+                <div class="detail-panel">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 id="detail-title" class="fw-bold mb-0"></h5>
+                        <button class="btn btn-sm btn-outline-glow" onclick="hideDetail()"><i class="bi bi-x-lg"></i></button>
+                    </div>
+                    <div class="row g-3" id="indicators-container">
+                        <!-- المؤشرات ستضاف ديناميكياً -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="mt-5 text-center text-secondary small">
+            <i class="bi bi-cpu"></i> Crypto SELL Signal Analyzer v3.5.2 · تحديث تلقائي كل 2 دقيقة · 
+            <span id="system-status" class="badge bg-success">نشط</span>
+        </footer>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // البيانات العامة
+        let coinsData = [];
+        let notifications = [];
+        let stats = {
+            total_coins: 0,
+            updated_coins: 0,
+            avg_signal: 0,
+            strong_sell_signals: 0,
+            sell_signals: 0,
+            neutral_signals: 0,
+            buy_signals: 0,
+            strong_buy_signals: 0,
+            fear_greed_index: 50,
+            total_notifications: 0,
+            last_update_str: '',
+            system_status: 'healthy'
+        };
+
+        // تحميل أولي
+        fetchAllData();
+
+        // تحديث يدوي
+        document.getElementById('manualRefreshBtn').addEventListener('click', function(e) {
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner me-2"></span> جاري التحديث...';
+            
+            fetch('/api/update', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    return fetchAllData();
+                })
+                .catch(err => {
+                    console.error(err);
+                    alert('فشل التحديث');
+                })
+                .finally(() => {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-arrow-repeat me-2"></i> تحديث';
+                });
+        });
+
+        // جلب كل البيانات
+        async function fetchAllData() {
+            try {
+                const [signalsRes, statsRes, notifRes] = await Promise.all([
+                    fetch('/api/signals'),
+                    fetch('/api/health'),
+                    fetch('/api/notifications?limit=10')
+                ]);
+
+                const signalsData = await signalsRes.json();
+                const healthData = await statsRes.json();
+                const notifData = await notifRes.json();
+
+                if (signalsData.status === 'success') {
+                    coinsData = signalsData.data;
+                }
+                
+                calculateStatsFromCoins();
+                
+                if (notifData.notifications) {
+                    notifications = notifData.notifications;
+                }
+
+                if (healthData.fear_greed !== undefined) {
+                    stats.fear_greed_index = healthData.fear_greed;
+                }
+                stats.total_notifications = notifData.total || notifications.length;
+                stats.last_update_str = healthData.last_update ? new Date(healthData.last_update).toLocaleString() : 'غير معروف';
+                stats.system_status = healthData.status || 'healthy';
+
+                renderUI();
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+        }
+
+        // حساب الإحصائيات من coinsData
+        function calculateStatsFromCoins() {
+            const valid = coinsData.filter(c => c.is_valid !== false);
+            stats.updated_coins = valid.length;
+            stats.total_coins = {{ coins|length }};
+
+            const percentages = valid.map(c => c.total_percentage);
+            stats.avg_signal = percentages.length ? (percentages.reduce((a,b)=>a+b,0)/percentages.length).toFixed(1) : 50;
+
+            stats.strong_sell_signals = valid.filter(c => c.total_percentage >= 70).length;
+            stats.sell_signals = valid.filter(c => c.total_percentage >= 60 && c.total_percentage < 70).length;
+            stats.neutral_signals = valid.filter(c => c.total_percentage >= 40 && c.total_percentage < 60).length;
+            stats.buy_signals = valid.filter(c => c.total_percentage >= 30 && c.total_percentage < 40).length;
+            stats.strong_buy_signals = valid.filter(c => c.total_percentage < 30).length;
+        }
+
+        // عرض كل شيء في الواجهة
+        function renderUI() {
+            renderStats();
+            renderCoinsTable();
+            renderNotifications();
+            document.getElementById('last-update-label').innerText = `آخر تحديث: ${stats.last_update_str}`;
+            document.getElementById('fgi-badge').innerHTML = `F&G: ${stats.fear_greed_index}`;
+            document.getElementById('system-status').innerText = stats.system_status === 'healthy' ? 'نشط' : 'تحذير';
+            document.getElementById('system-status').className = `badge bg-${stats.system_status === 'healthy' ? 'success' : 'warning'}`;
+        }
+
+        function renderStats() {
+            document.getElementById('stat-total').innerText = stats.updated_coins + '/' + stats.total_coins;
+            document.getElementById('stat-avg').innerHTML = stats.avg_signal + '%';
+            document.getElementById('stat-sell').innerHTML = (stats.strong_sell_signals+stats.sell_signals) + ' <small class="text-secondary">/' + stats.total_coins+'</small>';
+            document.getElementById('stat-notify').innerText = stats.total_notifications;
+        }
+
+        function renderCoinsTable() {
+            const tbody = document.getElementById('coins-table-body');
+            if (!coinsData.length) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary">لا توجد بيانات متاحة</td></tr>';
+                return;
+            }
+
+            let html = '';
+            coinsData.forEach(coin => {
+                const signalClass = 
+                    coin.signal_type === 'STRONG SELL' ? 'strong-sell' :
+                    coin.signal_type === 'SELL' ? 'sell' :
+                    coin.signal_type === 'NEUTRAL' ? 'neutral' :
+                    coin.signal_type === 'BUY' ? 'buy' :
+                    coin.signal_type === 'STRONG BUY' ? 'strong-buy' : 'neutral';
+                
+                const changeClass = coin.price_change_24h >= 0 ? 'text-success' : 'text-danger';
+                const changeIcon = coin.price_change_24h >= 0 ? 'bi-arrow-up-short' : 'bi-arrow-down-short';
+
+                html += `<tr class="coin-row" onclick="showDetail('${coin.symbol}')">
+                    <td>
+                        <strong>${coin.name}</strong><br>
+                        <small class="text-secondary">${coin.symbol.replace('/USDT','')}</small>
+                    </td>
+                    <td>$${coin.formatted_price}</td>
+                    <td class="${changeClass}"><i class="bi ${changeIcon}"></i> ${coin.formatted_24h_change}</td>
+                    <td><span class="signal-badge ${signalClass}">${coin.signal_type}</span></td>
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <span class="fw-bold me-2" style="color: ${coin.total_percentage > 60 ? '#E63946' : '#f18f01'};">${coin.total_percentage.toFixed(1)}%</span>
+                            <div class="progress-indicator flex-grow-1" style="width:60px;">
+                                <div class="h-100" style="width: ${coin.total_percentage}%; background: ${coin.total_percentage > 60 ? '#E63946' : '#f18f01'};"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td><i class="bi bi-chevron-right text-secondary"></i></td>
+                </tr>`;
+            });
+            tbody.innerHTML = html;
+        }
+
+        function renderNotifications() {
+            const container = document.getElementById('notifications-container');
+            const countSpan = document.getElementById('notif-count');
+            if (!notifications.length) {
+                container.innerHTML = '<p class="text-secondary text-center">لا توجد إشعارات بعد</p>';
+                countSpan.innerText = '0';
+                return;
+            }
+
+            countSpan.innerText = notifications.length;
+            let html = '';
+            notifications.slice(0,8).forEach(n => {
+                const typeClass = n.notification_type.includes('sell') ? 'strong-sell' : (n.notification_type.includes('buy') ? 'buy' : 'neutral');
+                const borderColor = n.notification_type.includes('sell') ? '#E63946' : (n.notification_type.includes('buy') ? '#3bb273' : '#6c757d');
+                html += `<div class="notification-item" style="border-left-color: ${borderColor};">
+                    <div class="d-flex justify-content-between">
+                        <span class="fw-bold">${n.coin_name}</span>
+                        <small class="text-secondary">${new Date(n.timestamp).toLocaleTimeString()}</small>
+                    </div>
+                    <div class="small mt-1">${n.message.split('\n')[0]}</div>
+                    <div class="d-flex justify-content-between mt-2">
+                        <span class="badge bg-dark">${n.signal_strength.toFixed(1)}%</span>
+                        <span>$${n.price.toFixed(2)}</span>
+                    </div>
+                </div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        // عرض التفاصيل
+        window.showDetail = function(symbol) {
+            const coin = coinsData.find(c => c.symbol === symbol);
+            if (!coin) return;
+
+            document.getElementById('detail-title').innerHTML = `<i class="bi bi-pie-chart me-2"></i> ${coin.name} (${coin.symbol.replace('/USDT','')}) - مؤشرات البيع`;
+            const container = document.getElementById('indicators-container');
+            let indicatorsHtml = '';
+            coin.indicators.forEach(ind => {
+                indicatorsHtml += `
+                <div class="col-md-6 col-lg-4">
+                    <div class="bg-dark bg-opacity-25 p-3 rounded-4">
+                        <div class="d-flex align-items-center">
+                            <div class="indicator-dot" style="background: ${ind.color};"></div>
+                            <strong>${ind.display_name}</strong>
+                            <span class="ms-auto fw-bold">${ind.percentage.toFixed(1)}%</span>
+                        </div>
+                        <div class="progress-indicator my-2">
+                            <div class="h-100" style="width: ${ind.percentage}%; background: ${ind.color};"></div>
+                        </div>
+                        <small class="text-secondary">${ind.description}</small>
+                    </div>
+                </div>`;
+            });
+            container.innerHTML = indicatorsHtml;
+            document.getElementById('detailPanel').style.display = 'block';
+            window.scrollTo({ top: document.getElementById('detailPanel').offsetTop - 80, behavior: 'smooth' });
+        };
+
+        window.hideDetail = function() {
+            document.getElementById('detailPanel').style.display = 'none';
+        };
+
+        // تحديث تلقائي كل 120 ثانية
+        setInterval(() => {
+            fetchAllData();
+        }, 120000);
+    </script>
+
+    <!-- تمرير قيمة عدد العملات من Flask إلى JS -->
+    <script>
+        stats.total_coins = {{ coins|length }};
+    </script>
+
+</body>
+</html>
