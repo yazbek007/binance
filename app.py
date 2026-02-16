@@ -108,54 +108,30 @@ class Notification:
 # ======================
 # إعدادات التطبيق (معدلة لصالح البيع)
 # ======================
+# ======================
+# إعدادات التطبيق (معدلة لصالح البيع)
+# ======================
 class AppConfig:
-    @staticmethod
-    def get_top_coins(limit=10):
-        """جلب أفضل العملات من حيث حجم التداول"""
-        try:
-            exchange = ccxt.binance()
-            tickers = exchange.fetch_tickers()
-            usdt_pairs = {k: v for k, v in tickers.items() 
-                         if k.endswith('/USDT') and v.get('quoteVolume')}
-            sorted_pairs = sorted(usdt_pairs.items(), 
-                                key=lambda x: x[1]['quoteVolume'] or 0, 
-                                reverse=True)
-            coins = []
-            EXCLUDED_COINS = ['LUNA', 'UST', 'FTT', 'TERRA', 'USD1', 'USDC']
-            for symbol, ticker in sorted_pairs[:limit]:
-                base = symbol.replace('/USDT', '')
-                if base not in EXCLUDED_COINS:
-                    coins.append(CoinConfig(symbol, base, base, 'USDT'))
-            if coins:
-                logger.info(f"✅ تم جلب {len(coins)} عملة من Binance")
-                return coins
-            else:
-                return AppConfig._get_default_coins()
-        except Exception as e:
-            logger.error(f"❌ خطأ في جلب العملات: {e}")
-            return AppConfig._get_default_coins()
+    # تم تعطيل التحديث التلقائي للعملات - استخدام قائمة ثابتة
+    # @staticmethod
+    # def get_top_coins(limit=10):
+    #     ... (تم التعطيل)
+    
+    # @staticmethod
+    # def _get_default_coins():
+    #     ... (تم التعطيل)
 
-    @staticmethod
-    def _get_default_coins():
-        return [
-            CoinConfig("BTC/USDT", "Bitcoin", "BTC", "USDT"),
-            CoinConfig("ETH/USDT", "Ethereum", "ETH", "USDT"),
-            CoinConfig("BNB/USDT", "Binance Coin", "BNB", "USDT"),
-            CoinConfig("SOL/USDT", "Solana", "SOL", "USDT"),
-            CoinConfig("XRP/USDT", "Ripple", "XRP", "USDT"),
-            CoinConfig("ADA/USDT", "Cardano", "ADA", "USDT"),
-            CoinConfig("DOGE/USDT", "Dogecoin", "DOGE", "USDT"),
-            CoinConfig("AVAX/USDT", "Avalanche", "AVAX", "USDT"),
-            CoinConfig("DOT/USDT", "Polkadot", "DOT", "USDT"),
-            CoinConfig("MATIC/USDT", "Polygon", "MATIC", "USDT"),
-            CoinConfig("LINK/USDT", "Chainlink", "LINK", "USDT"),
-            CoinConfig("TRX/USDT", "TRON", "TRX", "USDT"),
-            CoinConfig("ZEC/USDT", "Zcash", "ZEC", "USDT"),
-            CoinConfig("LTC/USDT", "Litecoin", "LTC", "USDT"),
-            CoinConfig("BCH/USDT", "Bitcoin Cash", "BCH", "USDT"),
-        ]
+    # قائمة العملات الثابتة (المطلوبة: BTC, ETH, BNB, SOL, XRP, LTC)
+    COINS = [
+        CoinConfig("BTC/USDT", "Bitcoin", "BTC", "USDT"),
+        CoinConfig("ETH/USDT", "Ethereum", "ETH", "USDT"),
+        CoinConfig("BNB/USDT", "Binance Coin", "BNB", "USDT"),
+        CoinConfig("SOL/USDT", "Solana", "SOL", "USDT"),
+        CoinConfig("XRP/USDT", "Ripple", "XRP", "USDT"),
+        CoinConfig("LTC/USDT", "Litecoin", "LTC", "USDT"),
+    ]
 
-    COINS = get_top_coins(15)
+    # ... باقي الإعدادات كما هي
 
     # أوزان معدلة لصالح مؤشرات البيع (زيادة وزن المؤشرات الهابطة)
     INDICATOR_WEIGHTS = {
@@ -233,7 +209,7 @@ class AppConfig:
 class ExternalAPIConfig:
     BINANCE_API_KEY = os.environ.get('BINANCE_API_KEY', '')
     BINANCE_SECRET_KEY = os.environ.get('BINANCE_SECRET_KEY', '')
-    NTFY_TOPIC = os.environ.get('NTFY_TOPIC_SELL', 'crypto_sell_alerts')
+    NTFY_TOPIC = os.environ.get('NTFY_TOPIC', 'crypto_sell_alerts')
     NTFY_URL = f"https://ntfy.sh/{NTFY_TOPIC}"
     FGI_API_URL = "https://api.alternative.me/fng/"
     REQUEST_TIMEOUT = 10
@@ -921,13 +897,20 @@ class SellSignalManager:
         self.fear_greed_score = 0.5
 
     def update_coins_list(self):
-        now = datetime.now()
-        if not self.last_coins_update or (now - self.last_coins_update).seconds > 3600:
-            new_coins = AppConfig.get_top_coins(15)
-            if new_coins:
-                AppConfig.COINS = new_coins
-                self.last_coins_update = now
-                logger.info(f"🔄 تم تحديث قائمة العملات: {len(new_coins)} عملة")
+        """تم تعطيل تحديث قائمة العملات - استخدام قائمة ثابتة"""
+        # تم تعطيل تحديث العملات التلقائي
+        # now = datetime.now()
+        # if not self.last_coins_update or (now - self.last_coins_update).seconds > 3600:
+        #     new_coins = AppConfig.get_top_coins(15)
+        #     if new_coins:
+        #         AppConfig.COINS = new_coins
+        #         self.last_coins_update = now
+        #         logger.info(f"🔄 تم تحديث قائمة العملات: {len(new_coins)} عملة")
+    
+        # فقط سجل أننا نستخدم القائمة الثابتة (مرة واحدة)
+        if not hasattr(self, '_static_coins_logged'):
+            logger.info(f"📋 Using static coin list: {len(AppConfig.COINS)} coins (BTC, ETH, BNB, SOL, XRP, LTC)")
+            self._static_coins_logged = True
 
     def update_all(self) -> bool:
         with self.lock:
