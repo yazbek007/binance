@@ -1,6 +1,6 @@
 """
 Crypto Signal Analyzer Bot - Simplified SELL Edition
-Version 5.0.0-sell - Focused on 4 key bearish indicators
+Version 5.0.1 - Enhanced: real indicators even when BTC filter off
 All notifications in English, no emojis.
 """
 
@@ -20,7 +20,7 @@ from flask import Flask, render_template, jsonify, request
 import ccxt
 
 # ======================
-# إعدادات التسجيل
+# Logging setup
 # ======================
 logging.basicConfig(
     level=logging.INFO,
@@ -33,7 +33,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ======================
-# هياكل البيانات الأساسية
+# Basic data structures
 # ======================
 class SignalType(Enum):
     STRONG_BUY = "STRONG BUY"
@@ -75,12 +75,13 @@ class CoinSignal:
     high_24h: float
     low_24h: float
     volume_24h: float
-    total_percentage: float   # bearish score (0-100, higher means stronger sell)
+    total_percentage: float   # bearish score (0-100)
     signal_type: SignalType
     signal_strength: str
     signal_color: str
     indicator_scores: Dict[str, IndicatorScore]
     last_updated: datetime
+    fear_greed_value: int     # for display
     is_valid: bool = True
     error_message: Optional[str] = None
 
@@ -96,10 +97,9 @@ class Notification:
     price: float
 
 # ======================
-# إعدادات التطبيق (مبسطة)
+# Application Configuration (simplified)
 # ======================
 class AppConfig:
-    # قائمة العملات الثابتة
     COINS = [
         CoinConfig("BTC/USDT", "Bitcoin", "BTC", "USDT"),
         CoinConfig("ETH/USDT", "Ethereum", "ETH", "USDT"),
@@ -109,17 +109,15 @@ class AppConfig:
         CoinConfig("LTC/USDT", "Litecoin", "LTC", "USDT"),
     ]
 
-    # عتبات الإشارة (تعتمد على مجموع المؤشرات)
     SIGNAL_THRESHOLDS = {
-        SignalType.STRONG_SELL: 3,    # 3 or more indicators
-        SignalType.SELL: 2,           # exactly 2 indicators
-        SignalType.NEUTRAL: 1,        # 1 or less
+        SignalType.STRONG_SELL: 3,
+        SignalType.SELL: 2,
+        SignalType.NEUTRAL: 1,
     }
 
-    UPDATE_INTERVAL = 120  # 2 minutes
-    MAX_CANDLES = 100      # تم التخفيض من 200 إلى 100
+    UPDATE_INTERVAL = 120
+    MAX_CANDLES = 100
 
-    # ألوان المؤشرات
     INDICATOR_COLORS = {
         IndicatorType.TREND.value: '#E63946',
         IndicatorType.RSI.value: '#F4A261',
@@ -142,13 +140,14 @@ class AppConfig:
     }
 
 # ======================
-# إعدادات APIs الخارجية
+# External APIs config
 # ======================
 class ExternalAPIConfig:
     BINANCE_API_KEY = os.environ.get('BINANCE_API_KEY', '')
     BINANCE_SECRET_KEY = os.environ.get('BINANCE_SECRET_KEY', '')
     NTFY_TOPIC = os.environ.get('NTFY_TOPIC', 'crypto_sell_alerts')
     NTFY_URL = f"https://ntfy.sh/{NTFY_TOPIC}"
+    FGI_API_URL = "https://api.alternative.me/fng/"
     REQUEST_TIMEOUT = 10
     MAX_RETRIES = 2
 
@@ -178,23 +177,40 @@ class BinanceClient:
             logger.error(f"Binance ticker error {symbol}: {e}")
             return None
 
-    def fetch_24h_stats(self, symbol: str) -> Dict:
-        ticker = self.fetch_ticker(symbol)
-        if ticker:
-            return {
-                'change': ticker.get('percentage', 0.0),
-                'high': ticker.get('high', 0.0),
-                'low': ticker.get('low', 0.0),
-                'volume': ticker.get('quoteVolume', 0.0)
-            }
-        return {'change': 0.0, 'high': 0.0, 'low': 0.0, 'volume': 0.0}
-
     def get_current_price(self, symbol: str) -> float:
         ticker = self.fetch_ticker(symbol)
         return ticker['last'] if ticker else 0.0
 
 # ======================
-# Indicator Calculators (مبسطة)
+# Fear & Greed Index Fetcher
+# ======================
+class FearGreedFetcher:
+    def __init__(self):
+        self.last_value = 50
+        self.last_update = None
+        self.cache_ttl = 300
+
+    def get(self) -> Tuple[int, int]:   # return (value, raw_value)
+        now = datetime.now()
+        if self.last_update and (now - self.last_update).total_seconds() < self.cache_ttl:
+            return self.last_value, self.last_value
+
+        try:
+            resp = requests.get(ExternalAPIConfig.FGI_API_URL, timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                if 'data' in data and data['data']:
+                    value = int(data['data'][0]['value'])
+                    self.last_value = value
+                    self.last_update = now
+                    return value, value
+        except Exception as e:
+            logger.error(f"FGI fetch error: {e}")
+
+        return self.last_value, self.last_value
+
+# ======================
+# Indicator Calculators (simplified)
 # ======================
 class IndicatorCalculator:
     @staticmethod
@@ -206,16 +222,6 @@ class IndicatorCalculator:
         for i in range(1, len(prices)):
             ema_values.append(prices[i] * k + ema_values[-1] * (1 - k))
         return ema_values
-
-    @staticmethod
-    def sma(prices: List[float], period: int) -> List[Optional[float]]:
-        result = []
-        for i in range(len(prices)):
-            if i < period - 1:
-                result.append(None)
-            else:
-                result.append(sum(prices[i - period + 1:i + 1]) / period)
-        return result
 
     @staticmethod
     def rsi(prices: List[float], period: int = 14) -> List[Optional[float]]:
@@ -241,11 +247,8 @@ class IndicatorCalculator:
                 avg_loss = (avg_loss * (period - 1) + losses[i]) / period
         return rsi_values
 
-    # ===== المؤشرات المبسطة (ترجع 0 أو 1) =====
-
     @staticmethod
     def bearish_trend(close_prices: List[float]) -> int:
-        """السعر < EMA50 < EMA200 → 1 وإلا 0"""
         if len(close_prices) < 200:
             return 0
         try:
@@ -260,7 +263,6 @@ class IndicatorCalculator:
 
     @staticmethod
     def overbought_rsi(close_prices: List[float]) -> int:
-        """RSI > 65 → 1، RSI > 75 → 2 (لكننا نستخدم 1 فقط)"""
         if len(close_prices) < 14:
             return 0
         try:
@@ -274,7 +276,6 @@ class IndicatorCalculator:
 
     @staticmethod
     def selling_volume(volumes: List[float], close_prices: List[float]) -> int:
-        """حجم > متوسط آخر 20 شمعة + السعر نازل → 1"""
         if len(volumes) < 20 or len(close_prices) < 2:
             return 0
         try:
@@ -289,7 +290,6 @@ class IndicatorCalculator:
 
     @staticmethod
     def support_break(highs: List[float], lows: List[float], close_prices: List[float]) -> int:
-        """السعر الحالي كسر أقل Low خلال آخر 20 شمعة → 1"""
         if len(lows) < 20:
             return 0
         try:
@@ -302,19 +302,14 @@ class IndicatorCalculator:
             return 0
 
 # ======================
-# Signal Processor (مبسط)
+# Signal Processor
 # ======================
 class SellSignalProcessor:
     @staticmethod
     def calculate_bearish_score(indicator_scores: Dict[str, int]) -> Dict:
-        """
-        المؤشرات تعطي 0 أو 1
-        المجموع = عدد المؤشرات التي أعطت 1
-        """
         total_score = sum(indicator_scores.values())
         total_percentage = (total_score / len(indicator_scores)) * 100 if indicator_scores else 0
 
-        # تحديد نوع الإشارة حسب المجموع
         if total_score >= AppConfig.SIGNAL_THRESHOLDS[SignalType.STRONG_SELL]:
             signal_type = SignalType.STRONG_SELL
         elif total_score >= AppConfig.SIGNAL_THRESHOLDS[SignalType.SELL]:
@@ -325,7 +320,6 @@ class SellSignalProcessor:
         signal_strength = SellSignalProcessor.get_signal_strength(total_score)
         signal_color = SellSignalProcessor.get_signal_color(signal_type)
 
-        # إنشاء كائنات IndicatorScore للعرض
         weighted_scores = {}
         for name, raw in indicator_scores.items():
             weighted_scores[name] = IndicatorScore(
@@ -366,14 +360,14 @@ class SellSignalProcessor:
         return mapping.get(signal_type, "secondary")
 
 # ======================
-# Notification Manager (معدل لتقليل التكرار)
+# Notification Manager
 # ======================
 class NotificationManager:
     def __init__(self):
         self.history: List[Notification] = []
         self.max_history = 50
         self.last_notification_time = {}
-        self.min_interval = 1800  # 30 minutes (زيادة لتجنب التكرار)
+        self.min_interval = 1800
 
     def add(self, notification: Notification):
         self.history.append(notification)
@@ -384,12 +378,9 @@ class NotificationManager:
         return self.history[-limit:] if self.history else []
 
     def should_send(self, coin_symbol: str, total_score: int, signal_type: SignalType) -> bool:
-        # نرسل فقط إذا كانت الإشارة SELL أو STRONG_SELL
         if signal_type not in [SignalType.SELL, SignalType.STRONG_SELL]:
             return False
-
         now = datetime.now()
-        # إذا كان آخر إشعار لهذه العملة خلال المدة المحددة، لا نرسل
         if coin_symbol in self.last_notification_time:
             delta = now - self.last_notification_time[coin_symbol]
             if delta.total_seconds() < self.min_interval:
@@ -459,7 +450,7 @@ class NotificationManager:
         return None
 
 # ======================
-# Signal Manager (معدل)
+# Signal Manager (SELL)
 # ======================
 class SellSignalManager:
     def __init__(self):
@@ -469,10 +460,11 @@ class SellSignalManager:
         self.binance = BinanceClient()
         self.lock = Lock()
         self.notification_manager = NotificationManager()
-        self.btc_bearish = False  # حالة ترند البيتكوين
+        self.btc_bearish = False
+        self.fgi_fetcher = FearGreedFetcher()
+        self.fear_greed_index = 50
 
     def check_btc_trend(self) -> bool:
-        """التحقق من ترند BTC: السعر < EMA50 < EMA200"""
         try:
             ohlcv = self.binance.fetch_ohlcv("BTC/USDT", '15m', 200)
             if not ohlcv or len(ohlcv) < 200:
@@ -491,9 +483,11 @@ class SellSignalManager:
     def update_all(self) -> bool:
         with self.lock:
             logger.info(f"Updating {len(AppConfig.COINS)} coins for SELL signals...")
-            # أولاً: التحقق من ترند البيتكوين
             self.btc_bearish = self.check_btc_trend()
             logger.info(f"BTC bearish trend: {self.btc_bearish}")
+
+            # Update Fear & Greed for display
+            fgi_raw, self.fear_greed_index = self.fgi_fetcher.get()
 
             success_count = 0
             for coin in AppConfig.COINS:
@@ -504,7 +498,6 @@ class SellSignalManager:
                     if signal and signal.is_valid:
                         self.signals[coin.symbol] = signal
                         success_count += 1
-                        # إرسال إشعار فقط إذا كان البيتكوين في ترند هابط
                         if self.btc_bearish:
                             self.notification_manager.create_notification(signal)
                 except Exception as e:
@@ -520,7 +513,6 @@ class SellSignalManager:
         if not ohlcv or len(ohlcv) < AppConfig.MAX_CANDLES:
             return None
 
-        opens = [c[1] for c in ohlcv]
         closes = [c[4] for c in ohlcv]
         highs = [c[2] for c in ohlcv]
         lows = [c[3] for c in ohlcv]
@@ -536,7 +528,7 @@ class SellSignalManager:
         low_24h = ticker.get('low', 0.0)
         volume_24h = ticker.get('quoteVolume', 0.0)
 
-        # حساب المؤشرات الأربعة
+        # Calculate real indicator scores (0/1)
         scores = {
             IndicatorType.TREND.value: IndicatorCalculator.bearish_trend(closes),
             IndicatorType.RSI.value: IndicatorCalculator.overbought_rsi(closes),
@@ -544,22 +536,25 @@ class SellSignalManager:
             IndicatorType.STRUCTURE.value: IndicatorCalculator.support_break(highs, lows, closes),
         }
 
-        # إذا لم يكن البيتكوين في ترند هابط، نجبر النتيجة على الحياد
-        if not self.btc_bearish:
-            # نجعل جميع المؤشرات 0
-            scores = {k: 0 for k in scores}
-            total_percentage = 0.0
-            signal_type = SignalType.NEUTRAL
-            signal_strength = "Neutral (BTC not bearish)"
-            signal_color = "secondary"
-        else:
+        # Real total percentage based on active indicators
+        real_total_percentage = (sum(scores.values()) / len(scores)) * 100
+
+        # Determine final signal based on BTC filter
+        if self.btc_bearish:
             result = SellSignalProcessor.calculate_bearish_score(scores)
             total_percentage = result['total_percentage']
             signal_type = result['signal_type']
             signal_strength = result['signal_strength']
             signal_color = result['signal_color']
+        else:
+            # BTC not bearish: keep real scores and percentage but force NEUTRAL signal
+            total_percentage = real_total_percentage
+            signal_type = SignalType.NEUTRAL
+            signal_strength = "Neutral (BTC not bearish)"
+            signal_color = "secondary"
+            # scores remain unchanged; they will be displayed as real
 
-        # إنشاء كائنات IndicatorScore للعرض (حتى لو كانت صفرية)
+        # Create IndicatorScore objects for display (using real raw scores)
         indicator_scores = {}
         for name, raw in scores.items():
             indicator_scores[name] = IndicatorScore(
@@ -586,6 +581,7 @@ class SellSignalManager:
             signal_color=signal_color,
             indicator_scores=indicator_scores,
             last_updated=datetime.now(),
+            fear_greed_value=self.fear_greed_index,
             is_valid=True
         )
 
@@ -593,7 +589,8 @@ class SellSignalManager:
         entry = {
             'timestamp': datetime.now(),
             'signals': {s: self.signals[s].total_percentage for s in self.signals},
-            'btc_bearish': self.btc_bearish
+            'btc_bearish': self.btc_bearish,
+            'fgi': self.fear_greed_index
         }
         self.history.append(entry)
         if len(self.history) > 50:
@@ -637,6 +634,7 @@ class SellSignalManager:
             'signal_color': s.signal_color,
             'indicators': indicators,
             'last_updated_str': self._format_time_delta(s.last_updated),
+            'fear_greed_value': s.fear_greed_value,
             'is_valid': True
         }
 
@@ -656,6 +654,7 @@ class SellSignalManager:
             'signal_color': 'secondary',
             'indicators': [],
             'last_updated_str': 'Unknown',
+            'fear_greed_value': self.fear_greed_index,
             'is_valid': False
         }
 
@@ -695,10 +694,9 @@ class SellSignalManager:
         valid = [c for c in coins if c['is_valid']]
         percentages = [c['total_percentage'] for c in valid]
 
-        # حسب النظام الجديد: المجموع يتراوح 0-100
-        strong_sell = sum(1 for c in valid if c['total_percentage'] >= 75)  # 3/4
-        sell = sum(1 for c in valid if 50 <= c['total_percentage'] < 75)    # 2/4
-        neutral = sum(1 for c in valid if 25 <= c['total_percentage'] < 50)  # 1/4
+        strong_sell = sum(1 for c in valid if c['total_percentage'] >= 75)
+        sell = sum(1 for c in valid if 50 <= c['total_percentage'] < 75)
+        neutral = sum(1 for c in valid if 25 <= c['total_percentage'] < 50)
         buy = sum(1 for c in valid if 0 < c['total_percentage'] < 25)
         strong_buy = sum(1 for c in valid if c['total_percentage'] == 0)
 
@@ -716,6 +714,7 @@ class SellSignalManager:
             'last_update_str': self._format_time_delta(self.last_update) if self.last_update else 'Unknown',
             'total_notifications': len(self.notification_manager.history),
             'btc_bearish': self.btc_bearish,
+            'fear_greed_index': self.fear_greed_index,
             'system_status': 'healthy' if len(valid) >= len(AppConfig.COINS) * 0.7 else 'warning'
         }
 
@@ -776,7 +775,7 @@ def index():
         coins=coins,
         stats=stats,
         notifications=notifications,
-        indicator_weights={}  # لا حاجة للأوزان الآن
+        indicator_weights={}
     )
 
 @app.route('/api/signals')
@@ -809,6 +808,7 @@ def health():
         'coins': len(signal_manager.signals),
         'uptime': time.time() - start_time,
         'btc_bearish': signal_manager.btc_bearish,
+        'fear_greed': signal_manager.fear_greed_index,
         'notifications': len(signal_manager.notification_manager.history)
     })
 
@@ -831,7 +831,7 @@ def send_startup_notification():
     try:
         msg = (
             f"Crypto SELL Signal Analyzer Started (Simplified Edition)\n"
-            f"Version: 5.0.0-sell\n"
+            f"Version: 5.0.1\n"
             f"Tracking {len(AppConfig.COINS)} coins\n"
             f"Update interval: {AppConfig.UPDATE_INTERVAL//60} minutes\n"
             f"Indicators: Trend, RSI, Volume, Structure"
@@ -848,7 +848,7 @@ threading.Thread(target=delayed_startup, daemon=True).start()
 
 if __name__ == '__main__':
     logger.info("=" * 50)
-    logger.info("Crypto SELL Signal Analyzer v5.0.0 (Simplified Bearish Edition)")
+    logger.info("Crypto SELL Signal Analyzer v5.0.1 (Enhanced Bearish Edition)")
     logger.info(f"Coins: {len(AppConfig.COINS)}")
     logger.info(f"Update every {AppConfig.UPDATE_INTERVAL//60} minutes")
     logger.info(f"NTFY: {ExternalAPIConfig.NTFY_URL}")
