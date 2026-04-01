@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-    <title>SELL EDGE · 4-Bearish Signal Analyzer</title>
+    <title>Bearish Edge · Crypto SELL Signal Analyzer</title>
     <!-- Bootstrap 5 + Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -15,7 +15,7 @@
         }
         body {
             background: #0a0a12;
-            background-image: radial-gradient(circle at 15% 30%, rgba(180, 40, 40, 0.15) 0%, transparent 30%),
+            background-image: radial-gradient(circle at 15% 30%, rgba(230, 57, 70, 0.15) 0%, transparent 30%),
                               radial-gradient(circle at 85% 70%, rgba(200, 60, 60, 0.12) 0%, transparent 35%);
             color: #e2e2f0;
             padding-bottom: 2rem;
@@ -53,7 +53,7 @@
         }
         .stat-card:hover {
             background: rgba(38, 38, 55, 0.9);
-            border-color: #E6394640;
+            border-color: #E6394680;
         }
         .signal-badge {
             font-weight: 700;
@@ -133,11 +133,11 @@
             border-spacing: 0 8px;
         }
         .detail-panel {
-            background: rgba(10, 10, 20, 0.7);
+            background: rgba(10, 10, 20, 0.85);
             backdrop-filter: blur(16px);
             border-radius: 32px;
             padding: 1.8rem;
-            border: 1px solid #E6394640;
+            border: 1px solid #E6394660;
             box-shadow: 0 25px 45px -10px #000000cc;
         }
         .btn-outline-glow {
@@ -182,23 +182,33 @@
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #0a0a15; }
         ::-webkit-scrollbar-thumb { background: #4a2a2a; border-radius: 15px; }
+        ::-webkit-scrollbar-thumb:hover { background: #703a3a; }
+        .search-box {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid #E6394640;
+            border-radius: 40px;
+            padding: 0.4rem 1rem;
+            color: white;
+        }
+        .search-box:focus {
+            outline: none;
+            border-color: #E63946;
+            box-shadow: 0 0 5px #E63946;
+        }
     </style>
 </head>
 <body>
 
-    <!-- Navbar with BTC trend condition -->
+    <!-- Navbar with BTC trend indicator -->
     <nav class="navbar navbar-dark px-4 py-3 mb-4">
         <div class="container-fluid d-flex flex-wrap align-items-center justify-content-between">
             <span class="navbar-brand fs-2">
                 <i class="bi bi-arrow-down-circle me-2" style="color: #E63946;"></i>
-                BEARISH EDGE <span style="font-weight:300;">|</span> 4‑INDICATOR SELL
+                BEARISH EDGE <span style="font-weight:300;">|</span> 4‑FACTOR SELL
             </span>
             <div class="d-flex gap-3 align-items-center">
-                <div class="sell-focus-badge" id="btcTrendBadge" style="background:#2a1a1f; border-color:#E63946; padding:0.3rem 1rem; border-radius:40px;">
+                <div class="sell-focus-badge" id="btcTrendBadge" style="background:#2a1a1f; border-color:#E63946;">
                     <i class="bi bi-bitcoin me-1"></i> BTC trend: <span id="btcTrendStatus">analyzing</span>
-                </div>
-                <div class="sell-focus-badge">
-                    <i class="bi bi-graph-down me-1"></i> SELL MODE · 4 Bearish Factors
                 </div>
                 <button class="btn refresh-btn" id="manualRefreshBtn">
                     <i class="bi bi-arrow-repeat me-2"></i> Refresh
@@ -209,7 +219,7 @@
 
     <div class="container">
 
-        <!-- Enhanced stats row - sell focused -->
+        <!-- Stats row - sell focused -->
         <div class="row g-3 mb-5" id="statsRow">
             <div class="col-6 col-md-3">
                 <div class="stat-card d-flex align-items-center">
@@ -228,7 +238,7 @@
                         <i class="bi bi-bar-chart-steps fs-3" style="color: #E63946;"></i>
                     </div>
                     <div>
-                        <small class="text-secondary-emphasis">Bearish Score Avg</small>
+                        <small class="text-secondary-emphasis">Avg Bearish Score</small>
                         <h3 class="mb-0 fw-bold" id="stat-avg">-</h3>
                     </div>
                 </div>
@@ -239,7 +249,7 @@
                         <i class="bi bi-exclamation-triangle fs-3" style="color: #f18f01;"></i>
                     </div>
                     <div>
-                        <small class="text-secondary-emphasis">Sell Signals (3-4/4)</small>
+                        <small class="text-secondary-emphasis">Strong Sell Signals</small>
                         <h3 class="mb-0 fw-bold" id="stat-strong-sell">-</h3>
                     </div>
                 </div>
@@ -250,10 +260,17 @@
                         <i class="bi bi-bell-fill fs-3" style="color: #a23b72;"></i>
                     </div>
                     <div>
-                        <small class="text-secondary-emphasis">Alerts Sent</small>
+                        <small class="text-secondary-emphasis">Sell Alerts Sent</small>
                         <h3 class="mb-0 fw-bold" id="stat-notify">-</h3>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Search bar -->
+        <div class="row mb-4">
+            <div class="col-md-6 mx-auto">
+                <input type="text" id="searchInput" class="form-control search-box w-100" placeholder="🔍 Search coin (e.g., Bitcoin, ETH)..." autocomplete="off">
             </div>
         </div>
 
@@ -275,7 +292,7 @@
                                     <th onclick="sortTable('change')" style="cursor: pointer;">24h</th>
                                     <th>Signal</th>
                                     <th onclick="sortTable('strength')" style="cursor: pointer;">Bearish %</th>
-                                    <th>Active Factor</th>
+                                    <th>Key Factor</th>
                                     <th></th>
                                 </tr>
                             </thead>
@@ -305,7 +322,7 @@
             </div>
         </div>
 
-        <!-- Detail panel: shows 4 indicators breakdown (Trend, RSI, Volume, Structure) -->
+        <!-- Detail panel: shows 4 bearish indicators -->
         <div class="row mt-4" id="detailPanel" style="display: none;">
             <div class="col-12">
                 <div class="detail-panel">
@@ -331,15 +348,15 @@
         </div>
 
         <footer class="mt-5 text-center text-secondary small d-flex flex-wrap justify-content-center gap-3">
-            <span><i class="bi bi-cpu me-1"></i> Crypto SELL v5.0 · Bearish 4‑Factor (EMA/RSI/Volume/Support)</span>
-            <span><i class="bi bi-arrow-repeat me-1"></i> Auto‑update 2min</span>
+            <span><i class="bi bi-cpu me-1"></i> Crypto SELL v5.0 · Bearish 4‑Factor (Trend/RSI/Volume/Support)</span>
+            <span><i class="bi bi-arrow-repeat me-1"></i> Auto‑update every 2 min</span>
             <span><span class="badge bg-success" id="system-status">active</span></span>
         </footer>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // ---------- GLOBALS ----------
+        // ---------- Global state ----------
         let coinsData = [];
         let notifications = [];
         let stats = {
@@ -355,8 +372,9 @@
             btc_bearish: false
         };
         let currentSort = { column: 'strength', direction: 'desc' };
+        let searchTerm = '';
 
-        // ---------- FETCH ALL ----------
+        // ---------- Fetch all data ----------
         async function fetchAllData() {
             try {
                 const [signalsRes, healthRes, notifRes] = await Promise.all([
@@ -379,7 +397,7 @@
                 stats.system_status = healthData.status || 'healthy';
                 stats.total_coins = healthData.coins || coinsData.length;
                 stats.btc_bearish = healthData.btc_bearish === true;
-                
+
                 // Update BTC badge
                 const btcSpan = document.getElementById('btcTrendStatus');
                 if (btcSpan) {
@@ -391,6 +409,7 @@
                         document.getElementById('btcTrendBadge').style.borderLeftColor = '#f0b400';
                     }
                 }
+
                 calculateStatsFromCoins();
                 renderUI();
             } catch (error) {
@@ -403,16 +422,14 @@
             stats.updated_coins = valid.length;
             const percentages = valid.map(c => c.total_percentage);
             stats.avg_signal = percentages.length ? (percentages.reduce((a,b)=>a+b,0)/percentages.length).toFixed(1) : 0;
-            // In 4-indicator model: score = sum of active indicators (0-4). total_percentage = (score/4)*100.
-            // Strong sell if score >= 3 (>=75%), sell if score ==2 (50-74%)
             stats.strong_sell_signals = valid.filter(c => c.total_percentage >= 75).length;   // 3 or 4 indicators
-            stats.sell_signals = valid.filter(c => c.total_percentage >= 50 && c.total_percentage < 75).length;  // 2 indicators
+            stats.sell_signals = valid.filter(c => c.total_percentage >= 50 && c.total_percentage < 75).length;
             stats.neutral_signals = valid.filter(c => c.total_percentage > 0 && c.total_percentage < 50).length;
         }
 
         function renderUI() {
             renderStats();
-            applySorting();
+            applyFilterAndSort();
             renderNotifications();
             document.getElementById('last-update-label').innerText = `last: ${stats.last_update_str}`;
             document.getElementById('system-status').innerText = stats.system_status === 'healthy' ? 'active' : 'warning';
@@ -434,27 +451,27 @@
                 currentSort.column = column;
                 currentSort.direction = 'desc';
             }
-            applySorting();
+            applyFilterAndSort();
         }
 
-        function applySorting() {
-            let sorted = [...coinsData];
+        function applyFilterAndSort() {
+            let filtered = coinsData.filter(coin => coin.name.toLowerCase().includes(searchTerm.toLowerCase()) || coin.symbol.toLowerCase().includes(searchTerm.toLowerCase()));
             if (currentSort.column === 'name') {
-                sorted.sort((a,b) => currentSort.direction === 'desc' ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name));
+                filtered.sort((a,b) => currentSort.direction === 'desc' ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name));
             } else if (currentSort.column === 'price') {
-                sorted.sort((a,b) => currentSort.direction === 'desc' ? b.current_price - a.current_price : a.current_price - b.current_price);
+                filtered.sort((a,b) => currentSort.direction === 'desc' ? b.current_price - a.current_price : a.current_price - b.current_price);
             } else if (currentSort.column === 'change') {
-                sorted.sort((a,b) => currentSort.direction === 'desc' ? b.price_change_24h - a.price_change_24h : a.price_change_24h - b.price_change_24h);
+                filtered.sort((a,b) => currentSort.direction === 'desc' ? b.price_change_24h - a.price_change_24h : a.price_change_24h - b.price_change_24h);
             } else if (currentSort.column === 'strength') {
-                sorted.sort((a,b) => currentSort.direction === 'desc' ? b.total_percentage - a.total_percentage : a.total_percentage - b.total_percentage);
+                filtered.sort((a,b) => currentSort.direction === 'desc' ? b.total_percentage - a.total_percentage : a.total_percentage - b.total_percentage);
             }
-            renderCoinsTable(sorted);
+            renderCoinsTable(filtered);
         }
 
         function renderCoinsTable(coins) {
             const tbody = document.getElementById('coins-table-body');
             if (!coins.length) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-secondary py-4">No coin data available</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-secondary py-4">No matching coins found</td></tr>';
                 return;
             }
             let html = '';
@@ -466,10 +483,10 @@
                 const changeClass = coin.price_change_24h >= 0 ? 'text-success' : 'text-danger';
                 const changeIcon = coin.price_change_24h >= 0 ? 'bi-arrow-up-short' : 'bi-arrow-down-short';
                 
-                // Find highest active indicator (raw_score 1) for "Active Factor"
-                let activeIndicators = (coin.indicators || []).filter(ind => ind.raw_score === 1);
+                // Find highest active bearish indicator (raw_score 100)
+                let activeIndicators = (coin.indicators || []).filter(ind => ind.raw_score === 100);
                 let topIndicator = activeIndicators.length ? activeIndicators[0] : (coin.indicators?.[0] || null);
-                let indicatorShort = topIndicator ? topIndicator.display_name.split(' ')[0] : '--';
+                let indicatorShort = topIndicator ? (topIndicator.display_name.split(' ')[0] + ' ' + (topIndicator.display_name.includes('RSI') ? 'RSI' : '')) : '--';
                 let indicatorIcon = '';
                 if (topIndicator && topIndicator.name === 'trend') indicatorIcon = '📉';
                 else if (topIndicator && topIndicator.name === 'rsi') indicatorIcon = '⚡';
@@ -538,7 +555,7 @@
             const sortedIndicators = orderedIndicators.map(id => coin.indicator_scores?.[id] || coin.indicators?.find(i => i.name === id)).filter(Boolean);
             
             sortedIndicators.forEach(ind => {
-                const isActive = ind.raw_score === 1;
+                const isActive = ind.raw_score === 100;
                 const activeBadge = isActive ? '<span class="badge bg-danger ms-2">ACTIVE</span>' : '<span class="badge bg-secondary ms-2">INACTIVE</span>';
                 indicatorsHtml += `
                 <div class="col-md-6 col-lg-3">
@@ -552,7 +569,7 @@
                             <div class="h-100" style="width: ${ind.percentage}%; background: ${ind.color};"></div>
                         </div>
                         <small class="text-secondary">${ind.description || '—'}</small>
-                        <div class="mt-2 small fw-bold">${ind.percentage === 100 ? '✓ Bearish condition met' : '✗ Condition not met'}</div>
+                        <div class="mt-2 small fw-bold">${isActive ? '✓ Bearish condition met' : '✗ Condition not met'}</div>
                     </div>
                 </div>`;
             });
@@ -561,7 +578,7 @@
             document.getElementById('detail-bearish-percent').innerText = coin.total_percentage.toFixed(1) + '%';
             const btcNote = document.getElementById('btcFilterNote');
             if (stats.btc_bearish) {
-                btcNote.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i> BTC Bearish Trend ACTIVE → sell signals are valid.';
+                btcNote.innerHTML = '<i class="bi bi-check-circle-fill text-danger me-1"></i> BTC Bearish Trend ACTIVE → sell signals are valid.';
             } else {
                 btcNote.innerHTML = '<i class="bi bi-shield-exclamation text-warning me-1"></i> BTC trend is NOT bearish → all signals are forced to NEUTRAL (system safety).';
             }
@@ -573,7 +590,13 @@
             document.getElementById('detailPanel').style.display = 'none';
         };
 
-        // Manual refresh via POST /api/update
+        // Search input handler
+        document.getElementById('searchInput').addEventListener('input', function(e) {
+            searchTerm = e.target.value;
+            applyFilterAndSort();
+        });
+
+        // Manual refresh
         document.getElementById('manualRefreshBtn').addEventListener('click', function(e) {
             const btn = e.currentTarget;
             btn.disabled = true;
@@ -594,7 +617,7 @@
         // Auto refresh every 120 seconds
         setInterval(fetchAllData, 120000);
         
-        // initial load
+        // Initial load
         fetchAllData();
     </script>
 </body>
